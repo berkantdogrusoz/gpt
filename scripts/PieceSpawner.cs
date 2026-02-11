@@ -18,6 +18,11 @@ public class PieceSpawner : MonoBehaviour
     [Header("Options")]
     public bool useAnchoredPositionForUI = true; // UI spawnPoints için anchoredPosition kullan
     public bool devLogSpawn = true; // spawn sırasında log at
+    
+    [Header("Smart Spawn")]
+    public bool useSmartSpawn = true; // Akıllı spawn sistemi
+    [Range(0f, 1f)]
+    public float smartSpawnChance = 0.8f; // %80 sığan shape, %20 random
 
     // Helper: tries to find the appropriate Canvas for a given spawn point (priority)
     private Canvas FindCanvasFor(Transform spawnPoint)
@@ -87,8 +92,8 @@ public class PieceSpawner : MonoBehaviour
                 continue;
             }
 
-            // Şekli ata ve görseli oluştur
-            ShapeData randomShape = availableShapes[Random.Range(0, availableShapes.Count)];
+            // Şekli seç - akıllı veya random
+            ShapeData selectedShape = SelectShape();
 
             // Hangi Canvas kullanılacak?
             Canvas targetCanvas = FindCanvasFor(sp);
@@ -98,7 +103,7 @@ public class PieceSpawner : MonoBehaviour
             PuzzlePiece p = Instantiate(piecePrefab, transform);
             p.name = $"Piece_{i}";
 
-            p.shapeData = randomShape;
+            p.shapeData = selectedShape;
             p.BuildShape();
 
             RectTransform pieceRt = p.GetComponent<RectTransform>();
@@ -186,5 +191,223 @@ public class PieceSpawner : MonoBehaviour
         }
 
         Debug.Log($"✅ Toplam {spawnedPieces.Count} piece spawn edildi");
+    }
+
+    // Akıllı veya random shape seç
+    private ShapeData SelectShape()
+    {
+        if (!useSmartSpawn || PuzzleManager.Instance == null || PuzzleManager.Instance.boardSpawner == null)
+        {
+            return availableShapes[Random.Range(0, availableShapes.Count)];
+        }
+
+        var board = PuzzleManager.Instance.boardSpawner;
+
+        // 1. Öncelik: Satır tamamlayacak shape'ler
+        List<ShapeData> rowCompletingShapes = GetRowCompletingShapes(board);
+        
+        if (rowCompletingShapes.Count > 0 && Random.value < smartSpawnChance)
+        {
+            ShapeData selected = rowCompletingShapes[Random.Range(0, rowCompletingShapes.Count)];
+            if (devLogSpawn) Debug.Log($"[SmartSpawn] ✨ Satır tamamlayacak shape: {selected.shapeName}");
+            return selected;
+        }
+
+        // 2. Öncelik: En azından sığabilen shape'ler
+        List<ShapeData> fittingShapes = GetFittingShapes();
+        
+        if (fittingShapes.Count > 0 && Random.value < smartSpawnChance)
+        {
+            ShapeData selected = fittingShapes[Random.Range(0, fittingShapes.Count)];
+            if (devLogSpawn) Debug.Log($"[SmartSpawn] Sığan shape: {selected.shapeName}");
+            return selected;
+        }
+
+        // 3. Fallback: Random
+        ShapeData randomShape = availableShapes[Random.Range(0, availableShapes.Count)];
+        if (devLogSpawn) Debug.Log($"[SmartSpawn] Random shape: {randomShape.shapeName}");
+        return randomShape;
+    }
+
+    // Satır tamamlayabilecek shape'leri bul
+    private List<ShapeData> GetRowCompletingShapes(GridSlotSpawner board)
+    {
+        List<ShapeData> completing = new List<ShapeData>();
+        
+        int rows = board.rows;
+        int cols = board.cols;
+
+        // Her satırın boşluklarını analiz et
+        for (int r = 0; r < rows; r++)
+        {
+            List<int> emptyColsInRow = new List<int>();
+            int filledCount = 0;
+
+            for (int c = 0; c < cols; c++)
+            {
+                SlotCell slot = board.GetSlotAt(r, c);
+                if (slot == null) continue;
+
+                if (slot.IsOccupied)
+                    filledCount++;
+                else
+                    emptyColsInRow.Add(c);
+            }
+
+            // Satır en az %50 doluysa ve boşluk varsa, tamamlayacak shape ara
+            float fillRatio = (float)filledCount / cols;
+            if (fillRatio >= 0.5f && emptyColsInRow.Count > 0 && emptyColsInRow.Count <= 4)
+            {
+                // Bu boşlukları dolduracak shape var mı?
+                foreach (var shape in availableShapes)
+                {
+                    if (shape == null) continue;
+                    if (completing.Contains(shape)) continue;
+
+                    if (CanShapeFillGaps(shape, board, r, emptyColsInRow, rows, cols))
+                    {
+                        completing.Add(shape);
+                    }
+                }
+            }
+        }
+
+        return completing;
+    }
+
+    // Shape verilen satırdaki boşlukları doldurabilir mi?
+    private bool CanShapeFillGaps(ShapeData shape, GridSlotSpawner board, int targetRow, List<int> emptyCols, int rows, int cols)
+    {
+        List<Vector2Int> cells = shape.GetCells();
+        if (cells.Count == 0) return false;
+
+        // Shape'in her olası pozisyonunu dene
+        for (int startCol = -3; startCol < cols; startCol++)
+        {
+            for (int startRow = 0; startRow < rows; startRow++)
+            {
+                bool allCellsValid = true;
+                int gapsFilled = 0;
+
+                foreach (var cellOffset in cells)
+                {
+                    int checkRow = startRow + cellOffset.y;
+                    int checkCol = startCol + cellOffset.x;
+
+                    // Grid dışı?
+                    if (checkRow < 0 || checkRow >= rows || checkCol < 0 || checkCol >= cols)
+                    {
+                        allCellsValid = false;
+                        break;
+                    }
+
+                    SlotCell slot = board.GetSlotAt(checkRow, checkCol);
+                    if (slot == null || slot.IsOccupied)
+                    {
+                        allCellsValid = false;
+                        break;
+                    }
+
+                    // Bu hücre hedef satırdaki boşluklardan biri mi?
+                    if (checkRow == targetRow && emptyCols.Contains(checkCol))
+                    {
+                        gapsFilled++;
+                    }
+                }
+
+                // Tüm hücreler geçerli VE en az 1 boşluk dolduruyorsa
+                if (allCellsValid && gapsFilled > 0)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    // Grid'e sığabilen shape'leri döndür
+    private List<ShapeData> GetFittingShapes()
+    {
+        List<ShapeData> fitting = new List<ShapeData>();
+
+        if (PuzzleManager.Instance == null || PuzzleManager.Instance.boardSpawner == null)
+            return fitting;
+
+        var board = PuzzleManager.Instance.boardSpawner;
+        int rows = board.rows;
+        int cols = board.cols;
+
+        foreach (var shape in availableShapes)
+        {
+            if (shape == null) continue;
+
+            if (CanShapeFitAnywhere(shape, board, rows, cols))
+            {
+                fitting.Add(shape);
+            }
+        }
+
+        return fitting;
+    }
+
+    // Shape grid'in herhangi bir yerine sığabiliyor mu?
+    private bool CanShapeFitAnywhere(ShapeData shape, GridSlotSpawner board, int rows, int cols)
+    {
+        List<Vector2Int> cells = shape.GetCells();
+        if (cells.Count == 0) return false;
+
+        for (int r = 0; r < rows; r++)
+        {
+            for (int c = 0; c < cols; c++)
+            {
+                bool canPlace = true;
+
+                foreach (var cellOffset in cells)
+                {
+                    int targetRow = r + cellOffset.y;
+                    int targetCol = c + cellOffset.x;
+
+                    // Grid dışı mı?
+                    if (targetRow < 0 || targetRow >= rows || targetCol < 0 || targetCol >= cols)
+                    {
+                        canPlace = false;
+                        break;
+                    }
+
+                    // Slot dolu mu?
+                    SlotCell slot = board.GetSlotAt(targetRow, targetCol);
+                    if (slot == null || slot.IsOccupied)
+                    {
+                        canPlace = false;
+                        break;
+                    }
+                }
+
+                if (canPlace) return true;
+            }
+        }
+
+        return false;
+    }
+
+    // En küçük (en az hücreli) shape'i bul
+    private ShapeData GetSmallestShape()
+    {
+        ShapeData smallest = null;
+        int minCells = int.MaxValue;
+
+        foreach (var shape in availableShapes)
+        {
+            if (shape == null) continue;
+            int cellCount = shape.GetCells().Count;
+            if (cellCount < minCells)
+            {
+                minCells = cellCount;
+                smallest = shape;
+            }
+        }
+
+        return smallest;
     }
 }
