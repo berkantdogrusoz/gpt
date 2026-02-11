@@ -15,6 +15,7 @@ public class ScoreTester : MonoBehaviour
                 {
                     PuzzleManager.Instance.hud.UpdateHUD(PuzzleManager.Instance.score, 5000);
                 }
+                PuzzleManager.Instance.AddScore(addAmount);
                 Debug.Log($"[ScoreTester] Added {addAmount}. New score: {PuzzleManager.Instance.score}");
             }
             else

@@ -29,6 +29,11 @@ public class PuzzleManager : MonoBehaviour
     public float comboMultiplierStep = 0.25f;
     private int comboCount = 0;
 
+    [Header("Power: Hammer")]
+    public int hammerChargeTarget = 3000;
+    public bool hammerReady = false;
+    [SerializeField] private int hammerCharge = 0;
+
     [Header("Row Clear Animation")]
     public float slotClearDelay = 0.08f;
 
@@ -71,7 +76,7 @@ public class PuzzleManager : MonoBehaviour
             Debug.Log($"✅ Default grid: {totalSlots} slots");
         }
 
-        if (hud != null) hud.UpdateHUD(score, GetTargetScoreForCurrentArena());
+        RefreshHUD();
 
         SpawnNewPieces();
     }
@@ -223,11 +228,9 @@ public class PuzzleManager : MonoBehaviour
         // YENİ: Satır sayısına göre bonus çarpan (1 satır=1x, 2 satır=2x, 3 satır=3x)
         int rowMultiplier = rowsCleared.Count;
         int gained = Mathf.RoundToInt(baseRowPoints * rowsCleared.Count * rowMultiplier * comboMult);
-        score += gained;
+        AddScore(gained);
 
         Debug.Log($"🎉 {rowsCleared.Count} row(s) cleared! +{gained} points (row x{rowMultiplier}, combo x{comboMult:F2}). Total score: {score}");
-
-        if (hud != null) hud.UpdateHUD(score, GetTargetScoreForCurrentArena());
 
         ShowRowClearText(rowsCleared.Count, comboCount);
 
@@ -435,7 +438,7 @@ public class PuzzleManager : MonoBehaviour
 
     private void ShowWin()
     {
-        if (hud != null) hud.UpdateHUD(score, GetTargetScoreForCurrentArena());
+        RefreshHUD();
         if (winPanel == null)
         {
             Debug.LogError("❌ WIN PANEL NULL!");
@@ -448,8 +451,8 @@ public class PuzzleManager : MonoBehaviour
 
     private void ShowLose()
     {
-        if (hud != null) hud.UpdateHUD(score, GetTargetScoreForCurrentArena());
-        
+        RefreshHUD();
+
         if (losePanel == null)
         {
             Debug.LogError("❌ LOSE PANEL NULL!");
@@ -458,6 +461,106 @@ public class PuzzleManager : MonoBehaviour
 
         losePanel.SetActive(true);
         Debug.Log("💀 LOSE PANEL AÇILDI!");
+    }
+
+
+    public void AddScore(int amount, bool addToHammerCharge = true)
+    {
+        if (amount <= 0) return;
+
+        score += amount;
+
+        if (addToHammerCharge)
+            AddHammerCharge(amount);
+
+        RefreshHUD();
+    }
+
+    private void AddHammerCharge(int amount)
+    {
+        if (hammerChargeTarget <= 0) hammerChargeTarget = 3000;
+
+        hammerCharge += amount;
+        if (hammerCharge >= hammerChargeTarget)
+        {
+            hammerCharge = hammerChargeTarget;
+            if (!hammerReady)
+            {
+                hammerReady = true;
+                Debug.Log("🔨 Hammer power READY!");
+            }
+        }
+
+        if (hud != null)
+        {
+            float normalized = (float)hammerCharge / hammerChargeTarget;
+            hud.UpdatePowerUI(normalized, hammerReady);
+        }
+    }
+
+    // UI Button burayı çağırabilir (Inspector'da sadece void görünür)
+    public void ActivateHammerFromUI()
+    {
+        TryActivateHammer();
+    }
+
+    public bool TryActivateHammer()
+    {
+        if (!hammerReady)
+        {
+            Debug.Log("⚠️ Hammer ready değil. Önce puan topla.");
+            return false;
+        }
+
+        hammerReady = false;
+        hammerCharge = 0;
+
+        int clearedSlotCount = 0;
+        if (boardSpawner != null && boardSpawner.spawnedSlots != null)
+        {
+            var affectedPieces = new HashSet<PuzzlePiece>();
+            foreach (var slot in boardSpawner.spawnedSlots)
+            {
+                if (slot == null) continue;
+
+                if (slot.currentPiece != null)
+                    affectedPieces.Add(slot.currentPiece);
+
+                slot.currentPiece = null;
+                slot.SetHighlight(false);
+                clearedSlotCount++;
+            }
+
+            foreach (var piece in affectedPieces)
+            {
+                if (piece != null)
+                    piece.RemoveFromBoardAndDestroy();
+            }
+        }
+
+        // Opsiyonel puan: hammer ile temizlenen slot başına küçük ödül
+        int reward = clearedSlotCount * 10;
+        if (reward > 0)
+            AddScore(reward, false); // score artsın ama power yeniden dolmasın
+        else
+            RefreshHUD();
+
+        Debug.Log($"🔨 Hammer activated. Cleared slots: {clearedSlotCount}, reward: {reward}");
+
+        // Mevcut akışı bozma: yeni parçalarla devam
+        CheckTrayEmpty();
+        Invoke(nameof(CheckLoseCondition), 0.1f);
+        return true;
+    }
+
+    private void RefreshHUD()
+    {
+        if (hud != null)
+        {
+            hud.UpdateHUD(score, GetTargetScoreForCurrentArena());
+            float normalized = hammerChargeTarget > 0 ? (float)hammerCharge / hammerChargeTarget : 0f;
+            hud.UpdatePowerUI(normalized, hammerReady);
+        }
     }
 
     private int GetTargetScoreForCurrentArena()
