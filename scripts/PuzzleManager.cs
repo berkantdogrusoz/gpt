@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
+using DG.Tweening;
 
 public class PuzzleManager : MonoBehaviour
 {
@@ -20,6 +21,22 @@ public class PuzzleManager : MonoBehaviour
     public GameObject losePanel;
     public HUDController hud;
 
+    [Header("Audio (Direct Clips)")]
+    public AudioSource sfxSource;
+    public AudioSource musicSource;
+
+    public AudioClip bgmClip;
+    [Range(0f, 1f)] public float bgmVolume = 0.7f;
+
+    public AudioClip sfxSlotPlaceClip;
+    public AudioClip sfxSlotClearClip;
+    public AudioClip sfxFullChargeClip;
+    public AudioClip sfxExplosionClip;
+    public AudioClip sfxWinClip;
+    public AudioClip sfxLoseClip;
+
+    [Range(0f, 1f)] public float sfxVolume = 1f;
+
     [Header("Settings")]
     public float respawnDelay = 0.5f;
 
@@ -28,6 +45,34 @@ public class PuzzleManager : MonoBehaviour
     public int baseRowPoints = 100;
     public float comboMultiplierStep = 0.25f;
     private int comboCount = 0;
+
+    [Header("Power: Hammer")]
+    public int hammerChargeTarget = 3000;
+    public bool hammerReady = false;
+    [SerializeField] private int hammerCharge = 0;
+
+    [Header("Power: Hammer Button Animation")]
+    public RectTransform hammerButtonRect;
+    public Button hammerButton;
+    public Canvas hammerUICanvas;
+    public GameObject hammerImpactFx;
+    public float hammerMoveToCenterDuration = 0.25f;
+    public float hammerDropDuration = 0.2f;
+    public float hammerCenterScale = 1.35f;
+    public float hammerImpactScale = 1.75f;
+    public float hammerTiltAtCenter = -20f;
+    public float hammerTiltAtImpact = 12f;
+    public int hammerAnimationSortingOrder = 500;
+
+    private Tween hammerReadyTween;
+    private bool hammerInUse = false;
+    private Vector3 hammerButtonBaseScale = Vector3.one;
+
+    private Canvas hammerRuntimeCanvas;
+    private bool hammerCanvasWasAddedAtRuntime = false;
+    private bool hammerPrevOverrideSorting = false;
+    private int hammerPrevSortingOrder = 0;
+    private int hammerPrevSortingLayerId = 0;
 
     [Header("Row Clear Animation")]
     public float slotClearDelay = 0.08f;
@@ -42,6 +87,7 @@ public class PuzzleManager : MonoBehaviour
     {
         if (Instance != null) { Destroy(gameObject); return; }
         Instance = this;
+        EnsureAudioSources();
     }
 
     private void Start()
@@ -71,9 +117,18 @@ public class PuzzleManager : MonoBehaviour
             Debug.Log($"✅ Default grid: {totalSlots} slots");
         }
 
-        if (hud != null) hud.UpdateHUD(score, GetTargetScoreForCurrentArena());
+        RefreshHUD();
+        PlayMusicIfAssigned();
+        CacheHammerButtonState();
+        UpdateHammerReadyVisualState();
 
         SpawnNewPieces();
+    }
+
+    private void OnDestroy()
+    {
+        StopHammerReadyTween();
+        RestoreHammerRenderState();
     }
 
     private void Update()
@@ -138,6 +193,7 @@ public class PuzzleManager : MonoBehaviour
     public void OnPiecePlaced(PuzzlePiece piece, SlotCell slot)
     {
         Debug.Log($"✅ Piece placed at ({slot.row}, {slot.col})");
+        PlaySfx(sfxSlotPlaceClip);
 
         StartCoroutine(CheckAndClearFullRowsCoroutine());
     }
@@ -191,6 +247,7 @@ public class PuzzleManager : MonoBehaviour
             yield break;
         }
 
+        PlaySfx(sfxSlotClearClip);
         Debug.Log($"🔔 Clearing rows: {string.Join(", ", rowsCleared)}");
 
         HashSet<PuzzlePiece> affectedPieces = new HashSet<PuzzlePiece>();
@@ -223,11 +280,9 @@ public class PuzzleManager : MonoBehaviour
         // YENİ: Satır sayısına göre bonus çarpan (1 satır=1x, 2 satır=2x, 3 satır=3x)
         int rowMultiplier = rowsCleared.Count;
         int gained = Mathf.RoundToInt(baseRowPoints * rowsCleared.Count * rowMultiplier * comboMult);
-        score += gained;
+        AddScore(gained);
 
         Debug.Log($"🎉 {rowsCleared.Count} row(s) cleared! +{gained} points (row x{rowMultiplier}, combo x{comboMult:F2}). Total score: {score}");
-
-        if (hud != null) hud.UpdateHUD(score, GetTargetScoreForCurrentArena());
 
         ShowRowClearText(rowsCleared.Count, comboCount);
 
@@ -433,9 +488,51 @@ public class PuzzleManager : MonoBehaviour
         Invoke(nameof(CheckLoseCondition), 0.1f);
     }
 
+    private void EnsureAudioSources()
+    {
+        if (sfxSource == null)
+        {
+            sfxSource = GetComponent<AudioSource>();
+            if (sfxSource == null)
+                sfxSource = gameObject.AddComponent<AudioSource>();
+        }
+
+        sfxSource.playOnAwake = false;
+        sfxSource.loop = false;
+        sfxSource.spatialBlend = 0f;
+        sfxSource.volume = Mathf.Clamp01(sfxVolume);
+
+        if (musicSource == null || musicSource == sfxSource)
+            musicSource = gameObject.AddComponent<AudioSource>();
+
+        musicSource.playOnAwake = false;
+        musicSource.loop = true;
+        musicSource.spatialBlend = 0f;
+        musicSource.volume = Mathf.Clamp01(bgmVolume);
+    }
+
+    private void PlayMusicIfAssigned()
+    {
+        if (musicSource == null || bgmClip == null) return;
+        if (musicSource.clip == bgmClip && musicSource.isPlaying) return;
+
+        musicSource.clip = bgmClip;
+        musicSource.loop = true;
+        musicSource.volume = Mathf.Clamp01(bgmVolume);
+        musicSource.Play();
+    }
+
+    private void PlaySfx(AudioClip clip, float volumeMultiplier = 1f)
+    {
+        if (sfxSource == null || clip == null) return;
+
+        sfxSource.volume = Mathf.Clamp01(sfxVolume);
+        sfxSource.PlayOneShot(clip, Mathf.Clamp01(volumeMultiplier));
+    }
+
     private void ShowWin()
     {
-        if (hud != null) hud.UpdateHUD(score, GetTargetScoreForCurrentArena());
+        RefreshHUD();
         if (winPanel == null)
         {
             Debug.LogError("❌ WIN PANEL NULL!");
@@ -443,13 +540,14 @@ public class PuzzleManager : MonoBehaviour
         }
 
         winPanel.SetActive(true);
+        PlaySfx(sfxWinClip);
         Debug.Log("🎊 WIN PANEL AÇILDI!");
     }
 
     private void ShowLose()
     {
-        if (hud != null) hud.UpdateHUD(score, GetTargetScoreForCurrentArena());
-        
+        RefreshHUD();
+
         if (losePanel == null)
         {
             Debug.LogError("❌ LOSE PANEL NULL!");
@@ -457,7 +555,306 @@ public class PuzzleManager : MonoBehaviour
         }
 
         losePanel.SetActive(true);
+        PlaySfx(sfxLoseClip);
         Debug.Log("💀 LOSE PANEL AÇILDI!");
+    }
+
+
+    public void AddScore(int amount, bool addToHammerCharge = true)
+    {
+        if (amount <= 0) return;
+
+        score += amount;
+
+        if (addToHammerCharge)
+            AddHammerCharge(amount);
+
+        RefreshHUD();
+    }
+
+    private void AddHammerCharge(int amount)
+    {
+        if (hammerChargeTarget <= 0) hammerChargeTarget = 3000;
+
+        hammerCharge += amount;
+        if (hammerCharge >= hammerChargeTarget)
+        {
+            hammerCharge = hammerChargeTarget;
+            if (!hammerReady)
+            {
+                hammerReady = true;
+                Debug.Log("🔨 Hammer power READY!");
+                PlaySfx(sfxFullChargeClip);
+                UpdateHammerReadyVisualState();
+            }
+        }
+
+        if (hud != null)
+        {
+            float normalized = (float)hammerCharge / hammerChargeTarget;
+            hud.UpdatePowerUI(normalized, hammerReady);
+        }
+    }
+
+    // UI Button burayı çağırabilir (Inspector'da sadece void görünür)
+    public void ActivateHammerFromUI()
+    {
+        TryActivateHammer();
+    }
+
+    public bool TryActivateHammer()
+    {
+        if (!hammerReady)
+        {
+            Debug.Log("⚠️ Hammer ready değil. Önce puan topla.");
+            return false;
+        }
+
+        if (hammerInUse)
+        {
+            Debug.Log("⚠️ Hammer animasyonu zaten çalışıyor.");
+            return false;
+        }
+
+        ConsumeHammerCharge();
+
+        if (hammerButtonRect == null)
+        {
+            ApplyHammerEffect();
+            return true;
+        }
+
+        PlayHammerActivationSequence();
+        return true;
+    }
+
+    private void ConsumeHammerCharge()
+    {
+        hammerReady = false;
+        hammerCharge = 0;
+        UpdateHammerReadyVisualState();
+        RefreshHUD();
+    }
+
+    private void ApplyHammerEffect()
+    {
+        int clearedSlotCount = 0;
+        if (boardSpawner != null && boardSpawner.spawnedSlots != null)
+        {
+            var affectedPieces = new HashSet<PuzzlePiece>();
+            foreach (var slot in boardSpawner.spawnedSlots)
+            {
+                if (slot == null) continue;
+
+                if (slot.currentPiece != null)
+                    affectedPieces.Add(slot.currentPiece);
+
+                slot.currentPiece = null;
+                slot.SetHighlight(false);
+                clearedSlotCount++;
+            }
+
+            foreach (var piece in affectedPieces)
+            {
+                if (piece != null)
+                    piece.RemoveFromBoardAndDestroy();
+            }
+        }
+
+        int reward = clearedSlotCount * 10;
+        if (reward > 0)
+            AddScore(reward, false);
+        else
+            RefreshHUD();
+
+        Debug.Log($"🔨 Hammer activated. Cleared slots: {clearedSlotCount}, reward: {reward}");
+
+        CheckTrayEmpty();
+        Invoke(nameof(CheckLoseCondition), 0.1f);
+    }
+
+    private void PlayHammerActivationSequence()
+    {
+        hammerInUse = true;
+
+        if (hammerButton != null)
+            hammerButton.interactable = false;
+
+        PrepareHammerRenderOnTop();
+        if (hammerButtonRect != null)
+            hammerButtonRect.SetAsLastSibling();
+
+        Vector2 startAnchoredPos = hammerButtonRect.anchoredPosition;
+        Vector3 startScale = hammerButtonRect.localScale;
+        Vector3 startRotation = hammerButtonRect.localEulerAngles;
+
+        Vector2 screenCenter = new Vector2(Screen.width * 0.5f, Screen.height * 0.5f);
+        Vector2 centerLocal = ScreenToLocalInButtonParent(screenCenter);
+        Vector3 boardCenterWorld = boardSpawner != null ? boardSpawner.transform.position : Vector3.zero;
+        Vector2 boardCenterLocal = WorldToLocalInButtonParent(boardCenterWorld);
+
+        Sequence seq = DOTween.Sequence();
+        seq.Append(hammerButtonRect.DOAnchorPos(centerLocal, hammerMoveToCenterDuration).SetEase(Ease.OutBack));
+        seq.Join(hammerButtonRect.DOScale(startScale * hammerCenterScale, hammerMoveToCenterDuration).SetEase(Ease.OutBack));
+        seq.Join(hammerButtonRect.DORotate(new Vector3(0f, 0f, hammerTiltAtCenter), hammerMoveToCenterDuration).SetEase(Ease.OutSine));
+
+        seq.AppendInterval(0.08f);
+
+        seq.Append(hammerButtonRect.DOAnchorPos(boardCenterLocal, hammerDropDuration).SetEase(Ease.InQuad));
+        seq.Join(hammerButtonRect.DOScale(startScale * hammerImpactScale, hammerDropDuration).SetEase(Ease.InBack));
+        seq.Join(hammerButtonRect.DORotate(new Vector3(0f, 0f, hammerTiltAtImpact), hammerDropDuration).SetEase(Ease.InSine));
+
+        seq.OnComplete(() =>
+        {
+            SpawnHammerImpactFx(boardCenterWorld);
+            ApplyHammerEffect();
+
+            Sequence backSeq = DOTween.Sequence();
+            backSeq.Append(hammerButtonRect.DOAnchorPos(startAnchoredPos, 0.18f).SetEase(Ease.OutCubic));
+            backSeq.Join(hammerButtonRect.DOScale(startScale, 0.18f).SetEase(Ease.OutCubic));
+            backSeq.Join(hammerButtonRect.DORotate(startRotation, 0.18f).SetEase(Ease.OutCubic));
+            backSeq.OnComplete(() =>
+            {
+                RestoreHammerRenderState();
+                hammerInUse = false;
+                UpdateHammerReadyVisualState();
+            });
+        });
+    }
+
+
+    private void PrepareHammerRenderOnTop()
+    {
+        if (hammerButtonRect == null) return;
+
+        hammerRuntimeCanvas = hammerButtonRect.GetComponent<Canvas>();
+        if (hammerRuntimeCanvas == null)
+        {
+            hammerRuntimeCanvas = hammerButtonRect.gameObject.AddComponent<Canvas>();
+            hammerCanvasWasAddedAtRuntime = true;
+        }
+        else
+        {
+            hammerCanvasWasAddedAtRuntime = false;
+        }
+
+        hammerPrevOverrideSorting = hammerRuntimeCanvas.overrideSorting;
+        hammerPrevSortingOrder = hammerRuntimeCanvas.sortingOrder;
+        hammerPrevSortingLayerId = hammerRuntimeCanvas.sortingLayerID;
+
+        hammerRuntimeCanvas.overrideSorting = true;
+        hammerRuntimeCanvas.sortingOrder = hammerAnimationSortingOrder;
+
+        if (hammerUICanvas != null)
+            hammerRuntimeCanvas.sortingLayerID = hammerUICanvas.sortingLayerID;
+
+        var cg = hammerButtonRect.GetComponent<CanvasGroup>();
+        if (cg != null)
+            cg.blocksRaycasts = true;
+    }
+
+    private void RestoreHammerRenderState()
+    {
+        if (hammerRuntimeCanvas == null) return;
+
+        if (hammerCanvasWasAddedAtRuntime)
+        {
+            Destroy(hammerRuntimeCanvas);
+        }
+        else
+        {
+            hammerRuntimeCanvas.overrideSorting = hammerPrevOverrideSorting;
+            hammerRuntimeCanvas.sortingOrder = hammerPrevSortingOrder;
+            hammerRuntimeCanvas.sortingLayerID = hammerPrevSortingLayerId;
+        }
+
+        hammerRuntimeCanvas = null;
+        hammerCanvasWasAddedAtRuntime = false;
+    }
+
+    private void SpawnHammerImpactFx(Vector3 worldPos)
+    {
+        PlaySfx(sfxExplosionClip);
+
+        if (hammerImpactFx == null) return;
+
+        Instantiate(hammerImpactFx, worldPos, Quaternion.identity);
+    }
+
+    private Vector2 WorldToLocalInButtonParent(Vector3 worldPos)
+    {
+        Camera uiCam = hammerUICanvas != null ? hammerUICanvas.worldCamera : null;
+        Vector2 screen = RectTransformUtility.WorldToScreenPoint(uiCam, worldPos);
+        return ScreenToLocalInButtonParent(screen);
+    }
+
+    private Vector2 ScreenToLocalInButtonParent(Vector2 screenPos)
+    {
+        RectTransform parentRt = hammerButtonRect != null ? hammerButtonRect.parent as RectTransform : null;
+        if (parentRt == null) return Vector2.zero;
+
+        Camera uiCam = hammerUICanvas != null ? hammerUICanvas.worldCamera : null;
+        RectTransformUtility.ScreenPointToLocalPointInRectangle(parentRt, screenPos, uiCam, out var localPt);
+        return localPt;
+    }
+
+    private void CacheHammerButtonState()
+    {
+        if (hammerButtonRect != null)
+            hammerButtonBaseScale = hammerButtonRect.localScale;
+    }
+
+    private void UpdateHammerReadyVisualState()
+    {
+        if (hammerButton != null)
+            hammerButton.interactable = hammerReady && !hammerInUse;
+
+        if (hammerReady && !hammerInUse)
+            StartHammerReadyTween();
+        else
+            StopHammerReadyTween();
+    }
+
+    private void StartHammerReadyTween()
+    {
+        if (hammerButtonRect == null) return;
+        if (hammerReadyTween != null && hammerReadyTween.IsActive()) return;
+
+        hammerButtonRect.localScale = hammerButtonBaseScale;
+
+        Sequence loop = DOTween.Sequence();
+        loop.Append(hammerButtonRect.DOScale(hammerButtonBaseScale * 1.07f, 0.16f).SetEase(Ease.OutSine));
+        loop.Join(hammerButtonRect.DORotate(new Vector3(0f, 0f, 4f), 0.08f).SetEase(Ease.OutSine));
+        loop.Append(hammerButtonRect.DORotate(new Vector3(0f, 0f, -4f), 0.08f).SetEase(Ease.OutSine));
+        loop.Append(hammerButtonRect.DORotate(Vector3.zero, 0.08f).SetEase(Ease.OutSine));
+        loop.Append(hammerButtonRect.DOScale(hammerButtonBaseScale, 0.16f).SetEase(Ease.InSine));
+        loop.SetLoops(-1, LoopType.Restart);
+        hammerReadyTween = loop;
+    }
+
+    private void StopHammerReadyTween()
+    {
+        if (hammerReadyTween != null)
+        {
+            hammerReadyTween.Kill();
+            hammerReadyTween = null;
+        }
+
+        if (hammerButtonRect != null)
+        {
+            hammerButtonRect.localScale = hammerButtonBaseScale;
+            hammerButtonRect.localRotation = Quaternion.identity;
+        }
+    }
+
+    private void RefreshHUD()
+    {
+        if (hud != null)
+        {
+            hud.UpdateHUD(score, GetTargetScoreForCurrentArena());
+            float normalized = hammerChargeTarget > 0 ? (float)hammerCharge / hammerChargeTarget : 0f;
+            hud.UpdatePowerUI(normalized, hammerReady);
+        }
     }
 
     private int GetTargetScoreForCurrentArena()

@@ -79,6 +79,18 @@ public class PuzzlePiece : MonoBehaviour,
 
         List<Vector2Int> cells = shapeData.GetCells();
 
+        bool hasAnchorCell = false;
+        for (int i = 0; i < cells.Count; i++)
+        {
+            if (cells[i] == Vector2Int.zero)
+            {
+                hasAnchorCell = true;
+                break;
+            }
+        }
+        if (!hasAnchorCell)
+            Debug.LogWarning($"⚠️ Shape {shapeData.shapeName} içinde (0,0) anchor hücresi yok. Preview/snap kayabilir.");
+
         Debug.Log($"🔧 Building shape: {shapeData.shapeName}, Cells: {cells.Count}");
 
         foreach (var cellPos in cells)
@@ -249,8 +261,8 @@ public class PuzzlePiece : MonoBehaviour,
             return;
         }
 
-        // Piece'in (0,0) hücresinin world pozisyonunu bul
-        Vector3 pieceAnchorWorldPos = GetFirstCellWorldPosition();
+        // Piece'in anchor (0,0) hücresinin world pozisyonunu bul
+        Vector3 pieceAnchorWorldPos = GetAnchorCellWorldPosition();
         Vector2 pieceScreenPoint = RectTransformUtility.WorldToScreenPoint(canvas != null ? canvas.worldCamera : null, pieceAnchorWorldPos);
 
         var board = PuzzleManager.Instance.boardSpawner;
@@ -290,8 +302,8 @@ public class PuzzlePiece : MonoBehaviour,
     {
         if (PuzzleManager.Instance == null || PuzzleManager.Instance.boardSpawner == null) return;
 
-        // Piece'in (0,0) hücresinin world pozisyonunu bul
-        Vector3 pieceAnchorWorldPos = GetFirstCellWorldPosition();
+        // Piece'in anchor (0,0) hücresinin world pozisyonunu bul
+        Vector3 pieceAnchorWorldPos = GetAnchorCellWorldPosition();
         Vector2 pieceScreenPoint = RectTransformUtility.WorldToScreenPoint(canvas != null ? canvas.worldCamera : null, pieceAnchorWorldPos);
 
         var board = PuzzleManager.Instance.boardSpawner;
@@ -323,13 +335,21 @@ public class PuzzlePiece : MonoBehaviour,
         }
     }
 
-    // Piece'in ilk (0,0) hücresinin world pozisyonunu döndür
-    private Vector3 GetFirstCellWorldPosition()
+    // Shape anchor'ı olan (0,0) hücresinin world pozisyonunu döndür
+    private Vector3 GetAnchorCellWorldPosition()
     {
-        if (cellVisuals != null && cellVisuals.Count > 0 && cellVisuals[0] != null)
+        if (cellVisuals != null && cellPositions != null)
         {
-            return cellVisuals[0].transform.position;
+            int count = Mathf.Min(cellVisuals.Count, cellPositions.Count);
+            for (int i = 0; i < count; i++)
+            {
+                if (cellPositions[i] == Vector2Int.zero && cellVisuals[i] != null)
+                    return cellVisuals[i].transform.position;
+            }
         }
+
+        // (0,0) hücresi yoksa da snap mantığı "virtual anchor" (piece root) üzerinden çalışır.
+        // Bu yüzden fallback olarak piece root world pos kullanılmalı.
         return transform.position;
     }
 
