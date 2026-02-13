@@ -8,6 +8,7 @@ public class V2MatchBoardManager : MonoBehaviour
     public V2LevelData levelData;
     public RectTransform boardRoot;
     public GameObject tilePrefab;
+    public GameObject slotPrefab; // Arka plan slot prefab'ı
     public V2KingdomHUD hud;
 
     [Header("Board Layout")]
@@ -15,8 +16,15 @@ public class V2MatchBoardManager : MonoBehaviour
     [Tooltip("false: ızgaranın geometrik merkezi root'a oturur (8x8 için önerilen)")]
     public bool alignToCenterCell = false;
 
-    [Header("Tile Colors")]
+    [Header("Tile Library")]
+    public Sprite[] tileSprites;
     public Color[] tileColors;
+    [Tooltip("Kapalıysa sprite'lar beyaz tint ile görünür; renk listesi sadece ID kaynağı olur.")]
+    public bool tintSpritesWithTileColors = false;
+    public Color defaultTileTint = Color.white;
+
+    [Header("Animation")]
+    public float fallStepDelay = 0.03f;
 
     [Header("Debug")]
     public bool verboseLogs = true;
@@ -25,6 +33,10 @@ public class V2MatchBoardManager : MonoBehaviour
     private int score;
     private int movesLeft;
     private bool busy;
+
+    // Public getter'lar - Input controller için
+    public int Rows => levelData != null ? levelData.rows : 8;
+    public int Cols => levelData != null ? levelData.cols : 8;
 
     private void Start()
     {
@@ -52,39 +64,55 @@ public class V2MatchBoardManager : MonoBehaviour
 
         int rows = Mathf.Max(1, levelData.rows);
         int cols = Mathf.Max(1, levelData.cols);
-        int colorCount = Mathf.Clamp(levelData.colorCount, 3, Mathf.Max(3, tileColors.Length));
 
         grid = new V2Tile[rows, cols];
 
         PrepareRootTransform();
         Vector2 anchor = GetAnchor(rows, cols);
 
+        // Önce arka plan slotlarını spawn et
+        SpawnSlots(rows, cols, anchor);
+
+        // Sonra tile'ları spawn et
         for (int r = 0; r < rows; r++)
         {
             for (int c = 0; c < cols; c++)
             {
-                var go = Instantiate(tilePrefab, boardRoot);
-                go.name = $"tile_{r}_{c}";
-
-                RectTransform rt = go.GetComponent<RectTransform>();
-                if (rt == null) rt = go.AddComponent<RectTransform>();
-
-                rt.anchorMin = new Vector2(0.5f, 0.5f);
-                rt.anchorMax = new Vector2(0.5f, 0.5f);
-                rt.pivot = new Vector2(0.5f, 0.5f);
-                rt.sizeDelta = new Vector2(cellSize, cellSize);
-                rt.anchoredPosition = new Vector2((c - anchor.x) * cellSize, (anchor.y - r) * cellSize);
-
-                V2Tile tile = go.GetComponent<V2Tile>();
-                if (tile == null) tile = go.AddComponent<V2Tile>();
-                int color = Random.Range(0, colorCount);
-                tile.SetData(r, c, color, tileColors);
-
+                V2Tile tile = SpawnTile(r, c, RandomTileId(), anchor, spawnAboveTop: false);
                 grid[r, c] = tile;
             }
         }
 
         StartCoroutine(RemoveInitialMatches());
+    }
+
+    private void SpawnSlots(int rows, int cols, Vector2 anchor)
+    {
+        if (slotPrefab == null) return;
+
+        for (int r = 0; r < rows; r++)
+        {
+            for (int c = 0; c < cols; c++)
+            {
+                GameObject slot = Instantiate(slotPrefab, boardRoot);
+                slot.name = $"slot_{r}_{c}";
+
+                RectTransform rt = slot.GetComponent<RectTransform>();
+                if (rt == null) rt = slot.AddComponent<RectTransform>();
+
+                rt.anchorMin = new Vector2(0.5f, 0.5f);
+                rt.anchorMax = new Vector2(0.5f, 0.5f);
+                rt.pivot = new Vector2(0.5f, 0.5f);
+                rt.sizeDelta = new Vector2(cellSize, cellSize);
+
+                float x = (c - anchor.x) * cellSize;
+                float y = (anchor.y - r) * cellSize;
+                rt.anchoredPosition = new Vector2(x, y);
+
+                // Slotları en arkaya at
+                rt.SetAsFirstSibling();
+            }
+        }
     }
 
     private void PrepareRootTransform()
@@ -105,7 +133,7 @@ public class V2MatchBoardManager : MonoBehaviour
 
     private int GetCenterCell(int count)
     {
-        return count % 2 == 1 ? count / 2 : count / 2; // even için sağ/alt merkez
+        return count / 2;
     }
 
     private IEnumerator RemoveInitialMatches()
@@ -113,23 +141,37 @@ public class V2MatchBoardManager : MonoBehaviour
         yield return null;
         while (true)
         {
-            var matches = FindAllMatches();
+            HashSet<Vector2Int> matches = FindAllMatches();
             if (matches.Count == 0) break;
 
-            int colorCount = Mathf.Clamp(levelData.colorCount, 3, Mathf.Max(3, tileColors.Length));
-            foreach (var p in matches)
-            {
-                grid[p.x, p.y].colorId = Random.Range(0, colorCount);
-                grid[p.x, p.y].RefreshVisual();
-            }
-
-            yield return null;
+            yield return StartCoroutine(ClearCollapseRefill(matches, giveScore: false));
         }
     }
 
     public void TrySwap(Vector2Int a, Vector2Int b)
     {
-        if (busy || movesLeft <= 0 || !IsInside(a) || !IsInside(b) || !AreNeighbors(a, b)) return;
+        if (busy)
+        {
+            Debug.Log("[V2Board] Busy, swap rejected");
+            return;
+        }
+        if (movesLeft <= 0)
+        {
+            Debug.Log("[V2Board] No moves left");
+            return;
+        }
+        if (!IsInside(a) || !IsInside(b))
+        {
+            Debug.Log($"[V2Board] Outside grid: a={a}, b={b}");
+            return;
+        }
+        if (!AreNeighbors(a, b))
+        {
+            Debug.Log($"[V2Board] Not neighbors: a={a}, b={b}");
+            return;
+        }
+
+        Debug.Log($"[V2Board] Starting swap: {a} <-> {b}");
         StartCoroutine(SwapResolve(a, b));
     }
 
@@ -138,7 +180,7 @@ public class V2MatchBoardManager : MonoBehaviour
         busy = true;
         SwapCells(a, b);
 
-        var matches = FindAllMatches();
+        HashSet<Vector2Int> matches = FindAllMatches();
         if (matches.Count == 0)
         {
             SwapCells(a, b);
@@ -147,38 +189,183 @@ public class V2MatchBoardManager : MonoBehaviour
         }
 
         movesLeft--;
+
         while (matches.Count > 0)
         {
-            int cleared = ClearMatches(matches);
-            score += cleared * 20;
-            RefreshHUD();
-            yield return null;
+            yield return StartCoroutine(ClearCollapseRefill(matches, giveScore: true));
             matches = FindAllMatches();
         }
 
+        RefreshHUD();
         busy = false;
+    }
+
+    private IEnumerator ClearCollapseRefill(HashSet<Vector2Int> matches, bool giveScore)
+    {
+        int clearedCount = ClearMatches(matches);
+        if (giveScore)
+            score += clearedCount * 20;
+
+        yield return null;
+
+        CollapseColumns();
+        yield return null;
+
+        RefillFromTop();
+        yield return new WaitForSeconds(fallStepDelay);
+
+        RefreshHUD();
+    }
+
+    private int ClearMatches(HashSet<Vector2Int> matches)
+    {
+        int cleared = 0;
+
+        foreach (Vector2Int p in matches)
+        {
+            V2Tile tile = grid[p.x, p.y];
+            if (tile == null) continue;
+
+            Destroy(tile.gameObject);
+            grid[p.x, p.y] = null;
+            cleared++;
+        }
+
+        if (verboseLogs) Debug.Log($"V2 cleared={cleared}");
+        return cleared;
+    }
+
+    private void CollapseColumns()
+    {
+        int rows = grid.GetLength(0);
+        int cols = grid.GetLength(1);
+        Vector2 anchor = GetAnchor(rows, cols);
+
+        for (int c = 0; c < cols; c++)
+        {
+            int writeRow = rows - 1;
+
+            for (int r = rows - 1; r >= 0; r--)
+            {
+                V2Tile tile = grid[r, c];
+                if (tile == null) continue;
+
+                if (writeRow != r)
+                {
+                    grid[writeRow, c] = tile;
+                    grid[r, c] = null;
+
+                    tile.row = writeRow;
+                    tile.col = c;
+                    SetTilePosition(tile, writeRow, c, anchor, false);
+                }
+
+                writeRow--;
+            }
+        }
+    }
+
+    private void RefillFromTop()
+    {
+        int rows = grid.GetLength(0);
+        int cols = grid.GetLength(1);
+        Vector2 anchor = GetAnchor(rows, cols);
+
+        for (int c = 0; c < cols; c++)
+        {
+            for (int r = 0; r < rows; r++)
+            {
+                if (grid[r, c] != null) continue;
+
+                V2Tile tile = SpawnTile(r, c, RandomTileId(), anchor, spawnAboveTop: true);
+                grid[r, c] = tile;
+            }
+        }
+    }
+
+    private V2Tile SpawnTile(int r, int c, int id, Vector2 anchor, bool spawnAboveTop)
+    {
+        GameObject go = Instantiate(tilePrefab, boardRoot);
+        go.name = $"tile_{r}_{c}";
+
+        RectTransform rt = go.GetComponent<RectTransform>();
+        if (rt == null) rt = go.AddComponent<RectTransform>();
+
+        rt.anchorMin = new Vector2(0.5f, 0.5f);
+        rt.anchorMax = new Vector2(0.5f, 0.5f);
+        rt.pivot = new Vector2(0.5f, 0.5f);
+        rt.sizeDelta = new Vector2(cellSize, cellSize);
+
+        V2Tile tile = go.GetComponent<V2Tile>();
+        if (tile == null) tile = go.AddComponent<V2Tile>();
+
+        tile.SetData(r, c, id);
+        tile.SetVisual(GetSpriteForId(id), GetColorForId(id));
+
+        SetTilePosition(tile, r, c, anchor, spawnAboveTop);
+        return tile;
+    }
+
+    private void SetTilePosition(V2Tile tile, int r, int c, Vector2 anchor, bool spawnAboveTop)
+    {
+        RectTransform rt = tile.GetComponent<RectTransform>();
+        if (rt == null) return;
+
+        float x = (c - anchor.x) * cellSize;
+        float y = (anchor.y - r) * cellSize;
+
+        if (spawnAboveTop)
+            y = (anchor.y + 1f) * cellSize;
+
+        rt.anchoredPosition = new Vector2(x, y);
+    }
+
+    private int RandomTileId()
+    {
+        int librarySize = Mathf.Max(tileSprites != null ? tileSprites.Length : 0, tileColors != null ? tileColors.Length : 0);
+        int count = Mathf.Clamp(levelData.colorCount, 3, Mathf.Max(3, librarySize));
+        return Random.Range(0, count);
+    }
+
+    private Sprite GetSpriteForId(int id)
+    {
+        if (tileSprites == null || tileSprites.Length == 0) return null;
+        return tileSprites[Mathf.Clamp(id, 0, tileSprites.Length - 1)];
+    }
+
+    private Color GetColorForId(int id)
+    {
+        Color c = defaultTileTint;
+
+        if (tintSpritesWithTileColors && tileColors != null && tileColors.Length > 0)
+            c = tileColors[Mathf.Clamp(id, 0, tileColors.Length - 1)];
+
+        if (c.a <= 0.001f)
+            c.a = 1f;
+
+        return c;
     }
 
     private void SwapCells(Vector2Int a, Vector2Int b)
     {
         V2Tile ta = grid[a.x, a.y];
         V2Tile tb = grid[b.x, b.y];
+        
+        if (ta == null || tb == null)
+        {
+            Debug.LogError($"[V2Board] SwapCells null tile! ta={ta}, tb={tb}");
+            return;
+        }
+
         grid[a.x, a.y] = tb;
         grid[b.x, b.y] = ta;
 
         (ta.row, ta.col) = (b.x, b.y);
         (tb.row, tb.col) = (a.x, a.y);
 
-        SetTilePosition(ta, b.x, b.y);
-        SetTilePosition(tb, a.x, a.y);
-    }
-
-    private void SetTilePosition(V2Tile tile, int r, int c)
-    {
         Vector2 anchor = GetAnchor(grid.GetLength(0), grid.GetLength(1));
-        RectTransform rt = tile.GetComponent<RectTransform>();
-        if (rt != null)
-            rt.anchoredPosition = new Vector2((c - anchor.x) * cellSize, (anchor.y - r) * cellSize);
+        SetTilePosition(ta, b.x, b.y, anchor, false);
+        SetTilePosition(tb, a.x, a.y, anchor, false);
     }
 
     private HashSet<Vector2Int> FindAllMatches()
@@ -187,11 +374,19 @@ public class V2MatchBoardManager : MonoBehaviour
         int rows = grid.GetLength(0);
         int cols = grid.GetLength(1);
 
+        // Yatay kontrol
         for (int r = 0; r < rows; r++)
         {
             int streak = 1;
             for (int c = 1; c < cols; c++)
             {
+                if (grid[r, c] == null || grid[r, c - 1] == null)
+                {
+                    if (streak >= 3) for (int k = 0; k < streak; k++) set.Add(new Vector2Int(r, c - 1 - k));
+                    streak = 1;
+                    continue;
+                }
+
                 if (grid[r, c].colorId == grid[r, c - 1].colorId) streak++;
                 else
                 {
@@ -202,11 +397,19 @@ public class V2MatchBoardManager : MonoBehaviour
             if (streak >= 3) for (int k = 0; k < streak; k++) set.Add(new Vector2Int(r, cols - 1 - k));
         }
 
+        // Dikey kontrol
         for (int c = 0; c < cols; c++)
         {
             int streak = 1;
             for (int r = 1; r < rows; r++)
             {
+                if (grid[r, c] == null || grid[r - 1, c] == null)
+                {
+                    if (streak >= 3) for (int k = 0; k < streak; k++) set.Add(new Vector2Int(r - 1 - k, c));
+                    streak = 1;
+                    continue;
+                }
+
                 if (grid[r, c].colorId == grid[r - 1, c].colorId) streak++;
                 else
                 {
@@ -220,22 +423,15 @@ public class V2MatchBoardManager : MonoBehaviour
         return set;
     }
 
-    private int ClearMatches(HashSet<Vector2Int> matches)
+    private bool IsInside(Vector2Int p)
     {
-        int cleared = 0;
-        int colorCount = Mathf.Clamp(levelData.colorCount, 3, Mathf.Max(3, tileColors.Length));
-        foreach (var p in matches)
-        {
-            grid[p.x, p.y].colorId = Random.Range(0, colorCount);
-            grid[p.x, p.y].RefreshVisual();
-            cleared++;
-        }
-        if (verboseLogs) Debug.Log($"V2 cleared={cleared}");
-        return cleared;
+        return p.x >= 0 && p.y >= 0 && p.x < grid.GetLength(0) && p.y < grid.GetLength(1);
     }
 
-    private bool IsInside(Vector2Int p) => p.x >= 0 && p.y >= 0 && p.x < grid.GetLength(0) && p.y < grid.GetLength(1);
-    private bool AreNeighbors(Vector2Int a, Vector2Int b) => Mathf.Abs(a.x - b.x) + Mathf.Abs(a.y - b.y) == 1;
+    private bool AreNeighbors(Vector2Int a, Vector2Int b)
+    {
+        return Mathf.Abs(a.x - b.x) + Mathf.Abs(a.y - b.y) == 1;
+    }
 
     private void RefreshHUD()
     {
@@ -249,12 +445,12 @@ public class V2MatchBoardManager : MonoBehaviour
     {
         for (int i = boardRoot.childCount - 1; i >= 0; i--)
         {
-            var ch = boardRoot.GetChild(i).gameObject;
+            GameObject child = boardRoot.GetChild(i).gameObject;
 #if UNITY_EDITOR
-            if (!Application.isPlaying) DestroyImmediate(ch);
-            else Destroy(ch);
+            if (!Application.isPlaying) DestroyImmediate(child);
+            else Destroy(child);
 #else
-            Destroy(ch);
+            Destroy(child);
 #endif
         }
     }

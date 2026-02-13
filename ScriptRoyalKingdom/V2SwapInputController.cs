@@ -5,8 +5,6 @@ public class V2SwapInputController : MonoBehaviour
     public V2MatchBoardManager board;
     public Camera uiCamera;
     public RectTransform boardRect;
-    public int rows = 8;
-    public int cols = 8;
 
     private Vector2Int? first;
 
@@ -20,6 +18,9 @@ public class V2SwapInputController : MonoBehaviour
     {
         if (board == null || boardRect == null) return;
 
+        int rows = board.Rows;
+        int cols = board.Cols;
+
         if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(boardRect, screenPos, uiCamera, out var local))
             return;
 
@@ -32,12 +33,16 @@ public class V2SwapInputController : MonoBehaviour
 
         Vector2Int cell = new Vector2Int(r, c);
 
+        Debug.Log($"[V2Input] Clicked cell: ({r}, {c})");
+
         if (!first.HasValue)
         {
             first = cell;
+            Debug.Log($"[V2Input] First selected: ({r}, {c})");
             return;
         }
 
+        Debug.Log($"[V2Input] Trying swap: {first.Value} -> {cell}");
         board.TrySwap(first.Value, cell);
         first = null;
     }
