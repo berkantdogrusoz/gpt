@@ -1,4 +1,3 @@
-// scripts/AudioManager.cs
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -40,16 +39,45 @@ public class AudioManager : MonoBehaviour
         Instance = this;
         DontDestroyOnLoad(gameObject);
 
-        sfxSource = gameObject.AddComponent<AudioSource>();
-        sfxSource.playOnAwake = false;
-        sfxSource.loop = false;
-
-        musicSource = gameObject.AddComponent<AudioSource>();
-        musicSource.playOnAwake = false;
-        musicSource.loop = true;
-
+        EnsureAudioSources();
         BuildMaps();
         ApplyVolumes();
+        WarnIfNoAudioListener();
+    }
+
+    private void Start()
+    {
+        // Play mode başında Inspector'dan gelen en güncel kütüphane ile tekrar kur.
+        BuildMaps();
+        ApplyVolumes();
+    }
+
+    private void OnValidate()
+    {
+        // Editörde değer değişince map güncel kalsın.
+        BuildMaps();
+        ApplyVolumes();
+    }
+
+    private void EnsureAudioSources()
+    {
+        if (sfxSource == null)
+        {
+            sfxSource = gameObject.GetComponent<AudioSource>();
+            if (sfxSource == null)
+                sfxSource = gameObject.AddComponent<AudioSource>();
+        }
+
+        sfxSource.playOnAwake = false;
+        sfxSource.loop = false;
+        sfxSource.spatialBlend = 0f; // 2D, mesafeden etkilenmez
+
+        if (musicSource == null || musicSource == sfxSource)
+            musicSource = gameObject.AddComponent<AudioSource>();
+
+        musicSource.playOnAwake = false;
+        musicSource.loop = true;
+        musicSource.spatialBlend = 0f; // 2D
     }
 
     private void BuildMaps()
@@ -60,20 +88,26 @@ public class AudioManager : MonoBehaviour
         foreach (var e in sfxLibrary)
         {
             if (e == null || string.IsNullOrEmpty(e.id) || e.clip == null) continue;
-            sfxMap[e.id] = e;
+            sfxMap[e.id.Trim()] = e;
         }
 
         foreach (var e in musicLibrary)
         {
             if (e == null || string.IsNullOrEmpty(e.id) || e.clip == null) continue;
-            musicMap[e.id] = e;
+            musicMap[e.id.Trim()] = e;
         }
     }
 
     private void ApplyVolumes()
     {
-        if (sfxSource != null) sfxSource.volume = sfxVolume;
-        if (musicSource != null) musicSource.volume = musicVolume;
+        if (sfxSource != null) sfxSource.volume = Mathf.Clamp01(sfxVolume);
+        if (musicSource != null) musicSource.volume = Mathf.Clamp01(musicVolume);
+    }
+
+    private void WarnIfNoAudioListener()
+    {
+        if (FindObjectOfType<AudioListener>() == null)
+            Debug.LogWarning("AudioManager: Sahnede AudioListener bulunamadı. Ses duyulmaz.");
     }
 
     public void SetSfxVolume(float value)
@@ -90,13 +124,20 @@ public class AudioManager : MonoBehaviour
 
     public void PlaySfx(string id)
     {
-        if (string.IsNullOrEmpty(id) || sfxSource == null) return;
+        if (string.IsNullOrWhiteSpace(id) || sfxSource == null) return;
 
-        if (!sfxMap.TryGetValue(id, out var e))
+        string key = id.Trim();
+        if (!sfxMap.TryGetValue(key, out var e))
         {
-            Debug.LogWarning($"AudioManager: SFX id bulunamadı -> {id}");
-            return;
+            BuildMaps(); // runtime'da güncellenmiş olabilir
+            if (!sfxMap.TryGetValue(key, out e))
+            {
+                Debug.LogWarning($"AudioManager: SFX id bulunamadı -> {key}");
+                return;
+            }
         }
+
+        if (e.clip == null) return;
 
         sfxSource.pitch = e.pitch;
         sfxSource.PlayOneShot(e.clip, e.volume * sfxVolume);
@@ -104,20 +145,26 @@ public class AudioManager : MonoBehaviour
 
     public void PlayMusic(string id, bool loop = true)
     {
-        if (string.IsNullOrEmpty(id) || musicSource == null) return;
+        if (string.IsNullOrWhiteSpace(id) || musicSource == null) return;
 
-        if (!musicMap.TryGetValue(id, out var e))
+        string key = id.Trim();
+        if (!musicMap.TryGetValue(key, out var e))
         {
-            Debug.LogWarning($"AudioManager: Music id bulunamadı -> {id}");
-            return;
+            BuildMaps();
+            if (!musicMap.TryGetValue(key, out e))
+            {
+                Debug.LogWarning($"AudioManager: Music id bulunamadı -> {key}");
+                return;
+            }
         }
 
+        if (e.clip == null) return;
         if (musicSource.clip == e.clip && musicSource.isPlaying) return;
 
         musicSource.clip = e.clip;
         musicSource.loop = loop;
         musicSource.pitch = e.pitch;
-        musicSource.volume = e.volume * musicVolume;
+        musicSource.volume = Mathf.Clamp01(e.volume * musicVolume);
         musicSource.Play();
     }
 

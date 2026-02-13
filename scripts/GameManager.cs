@@ -45,7 +45,7 @@ public class GameManager : MonoBehaviour
     {
         State = GameState.Playing;
         Time.timeScale = 1f;
-        SceneManager.LoadScene(gameScene);
+        SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex + 1); // Bir sonraki sahneye geç
     }
 
     // Oyunu duraklat

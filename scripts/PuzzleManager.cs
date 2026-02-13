@@ -1,10 +1,8 @@
-// scripts/PuzzleManager.cs
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
-using UnityEngine.Serialization;
 using DG.Tweening;
 
 public class PuzzleManager : MonoBehaviour
@@ -23,23 +21,21 @@ public class PuzzleManager : MonoBehaviour
     public GameObject losePanel;
     public HUDController hud;
 
-    [Header("Audio IDs")]
-    public string bgmId = "bgm_main";
+    [Header("Audio (Direct Clips)")]
+    public AudioSource sfxSource;
+    public AudioSource musicSource;
 
-    [FormerlySerializedAs("sfxPiecePlaceId")]
-    public string sfxSlotPlaceId = "slot_place";
+    public AudioClip bgmClip;
+    [Range(0f, 1f)] public float bgmVolume = 0.7f;
 
-    [FormerlySerializedAs("sfxRowClearId")]
-    public string sfxSlotClearId = "slot_clear";
+    public AudioClip sfxSlotPlaceClip;
+    public AudioClip sfxSlotClearClip;
+    public AudioClip sfxFullChargeClip;
+    public AudioClip sfxExplosionClip;
+    public AudioClip sfxWinClip;
+    public AudioClip sfxLoseClip;
 
-    [FormerlySerializedAs("sfxHammerReadyId")]
-    public string sfxFullChargeId = "full_charge";
-
-    [FormerlySerializedAs("sfxHammerImpactId")]
-    public string sfxExplosionId = "explosion";
-
-    public string sfxWinId = "win";
-    public string sfxLoseId = "lose";
+    [Range(0f, 1f)] public float sfxVolume = 1f;
 
     [Header("Settings")]
     public float respawnDelay = 0.5f;
@@ -91,6 +87,7 @@ public class PuzzleManager : MonoBehaviour
     {
         if (Instance != null) { Destroy(gameObject); return; }
         Instance = this;
+        EnsureAudioSources();
     }
 
     private void Start()
@@ -121,7 +118,7 @@ public class PuzzleManager : MonoBehaviour
         }
 
         RefreshHUD();
-        if (AudioManager.Instance != null && !string.IsNullOrEmpty(bgmId)) AudioManager.Instance.PlayMusic(bgmId, true);
+        PlayMusicIfAssigned();
         CacheHammerButtonState();
         UpdateHammerReadyVisualState();
 
@@ -196,7 +193,7 @@ public class PuzzleManager : MonoBehaviour
     public void OnPiecePlaced(PuzzlePiece piece, SlotCell slot)
     {
         Debug.Log($"✅ Piece placed at ({slot.row}, {slot.col})");
-        PlaySfx(sfxSlotPlaceId);
+        PlaySfx(sfxSlotPlaceClip);
 
         StartCoroutine(CheckAndClearFullRowsCoroutine());
     }
@@ -250,7 +247,7 @@ public class PuzzleManager : MonoBehaviour
             yield break;
         }
 
-        PlaySfx(sfxSlotClearId);
+        PlaySfx(sfxSlotClearClip);
         Debug.Log($"🔔 Clearing rows: {string.Join(", ", rowsCleared)}");
 
         HashSet<PuzzlePiece> affectedPieces = new HashSet<PuzzlePiece>();
@@ -280,6 +277,7 @@ public class PuzzleManager : MonoBehaviour
         comboCount++;
         float comboMult = 1f + comboMultiplierStep * (comboCount - 1);
         
+        // YENİ: Satır sayısına göre bonus çarpan (1 satır=1x, 2 satır=2x, 3 satır=3x)
         int rowMultiplier = rowsCleared.Count;
         int gained = Mathf.RoundToInt(baseRowPoints * rowsCleared.Count * rowMultiplier * comboMult);
         AddScore(gained);
@@ -321,22 +319,22 @@ public class PuzzleManager : MonoBehaviour
             if (combo > 1)
             {
                 message = $"COMBO x{combo}!";
-                color = new Color(1f, 0.5f, 0f);
+                color = new Color(1f, 0.5f, 0f); // Turuncu
             }
             else if (rowCount >= 3)
             {
                 message = $"AMAZING! x{rowCount}";
-                color = new Color(1f, 0.2f, 0.8f);
+                color = new Color(1f, 0.2f, 0.8f); // Pembe
             }
             else if (rowCount == 2)
             {
                 message = $"DOUBLE! x{rowCount}";
-                color = new Color(0f, 0.8f, 1f);
+                color = new Color(0f, 0.8f, 1f); // Mavi
             }
             else
             {
                 message = "PERFECT!";
-                color = new Color(0f, 1f, 0.5f);
+                color = new Color(0f, 1f, 0.5f); // Yeşil
             }
 
             floatingText.Show(message, color, centerPos);
@@ -490,11 +488,46 @@ public class PuzzleManager : MonoBehaviour
         Invoke(nameof(CheckLoseCondition), 0.1f);
     }
 
-    private void PlaySfx(string sfxId)
+    private void EnsureAudioSources()
     {
-        if (AudioManager.Instance == null) return;
-        if (string.IsNullOrEmpty(sfxId)) return;
-        AudioManager.Instance.PlaySfx(sfxId);
+        if (sfxSource == null)
+        {
+            sfxSource = GetComponent<AudioSource>();
+            if (sfxSource == null)
+                sfxSource = gameObject.AddComponent<AudioSource>();
+        }
+
+        sfxSource.playOnAwake = false;
+        sfxSource.loop = false;
+        sfxSource.spatialBlend = 0f;
+        sfxSource.volume = Mathf.Clamp01(sfxVolume);
+
+        if (musicSource == null || musicSource == sfxSource)
+            musicSource = gameObject.AddComponent<AudioSource>();
+
+        musicSource.playOnAwake = false;
+        musicSource.loop = true;
+        musicSource.spatialBlend = 0f;
+        musicSource.volume = Mathf.Clamp01(bgmVolume);
+    }
+
+    private void PlayMusicIfAssigned()
+    {
+        if (musicSource == null || bgmClip == null) return;
+        if (musicSource.clip == bgmClip && musicSource.isPlaying) return;
+
+        musicSource.clip = bgmClip;
+        musicSource.loop = true;
+        musicSource.volume = Mathf.Clamp01(bgmVolume);
+        musicSource.Play();
+    }
+
+    private void PlaySfx(AudioClip clip, float volumeMultiplier = 1f)
+    {
+        if (sfxSource == null || clip == null) return;
+
+        sfxSource.volume = Mathf.Clamp01(sfxVolume);
+        sfxSource.PlayOneShot(clip, Mathf.Clamp01(volumeMultiplier));
     }
 
     private void ShowWin()
@@ -507,7 +540,7 @@ public class PuzzleManager : MonoBehaviour
         }
 
         winPanel.SetActive(true);
-        PlaySfx(sfxWinId);
+        PlaySfx(sfxWinClip);
         Debug.Log("🎊 WIN PANEL AÇILDI!");
     }
 
@@ -522,9 +555,10 @@ public class PuzzleManager : MonoBehaviour
         }
 
         losePanel.SetActive(true);
-        PlaySfx(sfxLoseId);
+        PlaySfx(sfxLoseClip);
         Debug.Log("💀 LOSE PANEL AÇILDI!");
     }
+
 
     public void AddScore(int amount, bool addToHammerCharge = true)
     {
@@ -550,7 +584,7 @@ public class PuzzleManager : MonoBehaviour
             {
                 hammerReady = true;
                 Debug.Log("🔨 Hammer power READY!");
-                PlaySfx(sfxFullChargeId);
+                PlaySfx(sfxFullChargeClip);
                 UpdateHammerReadyVisualState();
             }
         }
@@ -562,6 +596,7 @@ public class PuzzleManager : MonoBehaviour
         }
     }
 
+    // UI Button burayı çağırabilir (Inspector'da sadece void görünür)
     public void ActivateHammerFromUI()
     {
         TryActivateHammer();
@@ -687,6 +722,7 @@ public class PuzzleManager : MonoBehaviour
         });
     }
 
+
     private void PrepareHammerRenderOnTop()
     {
         if (hammerButtonRect == null) return;
@@ -738,7 +774,7 @@ public class PuzzleManager : MonoBehaviour
 
     private void SpawnHammerImpactFx(Vector3 worldPos)
     {
-        PlaySfx(sfxExplosionId);
+        PlaySfx(sfxExplosionClip);
 
         if (hammerImpactFx == null) return;
 
