@@ -1,11 +1,21 @@
 using UnityEngine;
 using UnityEngine.UI;
 
+public enum V2SpecialType
+{
+    None = 0,
+    RocketHorizontal = 1,
+    RocketVertical = 2,
+    Bomb = 3,
+    Disco = 4,
+}
+
 public class V2Tile : MonoBehaviour
 {
     [HideInInspector] public int row;
     [HideInInspector] public int col;
     [HideInInspector] public int colorId;
+    [HideInInspector] public V2SpecialType specialType;
 
     public Image icon;
 
@@ -14,6 +24,12 @@ public class V2Tile : MonoBehaviour
         row = r;
         col = c;
         colorId = id;
+        specialType = V2SpecialType.None;
+    }
+
+    public void SetSpecial(V2SpecialType type)
+    {
+        specialType = type;
     }
 
     public void SetVisual(Sprite sprite, Color tint)

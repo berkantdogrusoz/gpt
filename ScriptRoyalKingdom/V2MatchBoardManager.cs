@@ -25,6 +25,9 @@ public class V2MatchBoardManager : MonoBehaviour
 
     [Header("Animation")]
     public float fallStepDelay = 0.03f;
+    public float swapDuration = 0.12f;
+    public float invalidShakeDuration = 0.12f;
+    public float invalidShakeOffset = 10f;
 
     [Header("Debug")]
     public bool verboseLogs = true;
@@ -37,6 +40,7 @@ public class V2MatchBoardManager : MonoBehaviour
     // Public getter'lar - Input controller için
     public int Rows => levelData != null ? levelData.rows : 8;
     public int Cols => levelData != null ? levelData.cols : 8;
+    public float CellSize => cellSize;
 
     private void Start()
     {
@@ -141,10 +145,10 @@ public class V2MatchBoardManager : MonoBehaviour
         yield return null;
         while (true)
         {
-            HashSet<Vector2Int> matches = FindAllMatches();
+            HashSet<Vector2Int> matches = FindAllMatches(out _);
             if (matches.Count == 0) break;
 
-            yield return StartCoroutine(ClearCollapseRefill(matches, giveScore: false));
+            yield return StartCoroutine(ClearCollapseRefill(matches, new Dictionary<Vector2Int, V2SpecialType>(), giveScore: false, allowSpecialSpawn: false));
         }
     }
 
@@ -163,11 +167,13 @@ public class V2MatchBoardManager : MonoBehaviour
         if (!IsInside(a) || !IsInside(b))
         {
             Debug.Log($"[V2Board] Outside grid: a={a}, b={b}");
+            StartCoroutine(ShakeTileAt(a));
             return;
         }
         if (!AreNeighbors(a, b))
         {
             Debug.Log($"[V2Board] Not neighbors: a={a}, b={b}");
+            StartCoroutine(ShakeTileAt(a));
             return;
         }
 
@@ -178,12 +184,14 @@ public class V2MatchBoardManager : MonoBehaviour
     private IEnumerator SwapResolve(Vector2Int a, Vector2Int b)
     {
         busy = true;
-        SwapCells(a, b);
 
-        HashSet<Vector2Int> matches = FindAllMatches();
+        yield return StartCoroutine(AnimateSwapCells(a, b));
+
+        HashSet<Vector2Int> matches = FindAllMatches(out Dictionary<Vector2Int, V2SpecialType> specialSpawns);
         if (matches.Count == 0)
         {
-            SwapCells(a, b);
+            yield return StartCoroutine(AnimateSwapCells(b, a));
+            yield return StartCoroutine(ShakeTileAt(a));
             busy = false;
             yield break;
         }
@@ -192,17 +200,17 @@ public class V2MatchBoardManager : MonoBehaviour
 
         while (matches.Count > 0)
         {
-            yield return StartCoroutine(ClearCollapseRefill(matches, giveScore: true));
-            matches = FindAllMatches();
+            yield return StartCoroutine(ClearCollapseRefill(matches, specialSpawns, giveScore: true, allowSpecialSpawn: true));
+            matches = FindAllMatches(out specialSpawns);
         }
 
         RefreshHUD();
         busy = false;
     }
 
-    private IEnumerator ClearCollapseRefill(HashSet<Vector2Int> matches, bool giveScore)
+    private IEnumerator ClearCollapseRefill(HashSet<Vector2Int> matches, Dictionary<Vector2Int, V2SpecialType> specialSpawns, bool giveScore, bool allowSpecialSpawn)
     {
-        int clearedCount = ClearMatches(matches);
+        int clearedCount = ClearMatches(matches, specialSpawns, allowSpecialSpawn);
         if (giveScore)
             score += clearedCount * 20;
 
@@ -217,14 +225,22 @@ public class V2MatchBoardManager : MonoBehaviour
         RefreshHUD();
     }
 
-    private int ClearMatches(HashSet<Vector2Int> matches)
+    private int ClearMatches(HashSet<Vector2Int> matches, Dictionary<Vector2Int, V2SpecialType> specialSpawns, bool allowSpecialSpawn)
     {
         int cleared = 0;
+        HashSet<Vector2Int> expanded = ExpandMatchesWithSpecials(matches);
 
-        foreach (Vector2Int p in matches)
+        foreach (Vector2Int p in expanded)
         {
             V2Tile tile = grid[p.x, p.y];
             if (tile == null) continue;
+
+            if (allowSpecialSpawn && specialSpawns != null && specialSpawns.TryGetValue(p, out V2SpecialType spawnType) && spawnType != V2SpecialType.None)
+            {
+                tile.SetSpecial(spawnType);
+                ApplyTileVisual(tile);
+                continue;
+            }
 
             Destroy(tile.gameObject);
             grid[p.x, p.y] = null;
@@ -277,10 +293,57 @@ public class V2MatchBoardManager : MonoBehaviour
             {
                 if (grid[r, c] != null) continue;
 
-                V2Tile tile = SpawnTile(r, c, RandomTileId(), anchor, spawnAboveTop: true);
+                // Not: Spawn-above davranışı animasyonla desteklenmediğinde taşlar
+                // görünür ızgara dışına düşebiliyor. Stabil gameplay için doğrudan
+                // hedef hücreye spawn ediyoruz.
+                V2Tile tile = SpawnTile(r, c, RandomTileId(), anchor, spawnAboveTop: false);
                 grid[r, c] = tile;
             }
         }
+    }
+
+    public Vector2 GetBoardAnchor()
+    {
+        int rows = Mathf.Max(1, Rows);
+        int cols = Mathf.Max(1, Cols);
+        return GetAnchor(rows, cols);
+    }
+
+
+    public bool TryGetClosestCellFromScreen(Vector2 screenPos, Camera cam, out Vector2Int cell)
+    {
+        cell = default;
+        if (grid == null) return false;
+
+        int rows = grid.GetLength(0);
+        int cols = grid.GetLength(1);
+
+        float bestDist = float.MaxValue;
+        bool found = false;
+
+        for (int r = 0; r < rows; r++)
+        {
+            for (int c = 0; c < cols; c++)
+            {
+                V2Tile tile = grid[r, c];
+                if (tile == null) continue;
+
+                RectTransform rt = tile.GetComponent<RectTransform>();
+                if (rt == null) continue;
+
+                Vector2 tileScreen = RectTransformUtility.WorldToScreenPoint(cam, rt.position);
+                float d = (tileScreen - screenPos).sqrMagnitude;
+
+                if (d < bestDist)
+                {
+                    bestDist = d;
+                    cell = new Vector2Int(r, c);
+                    found = true;
+                }
+            }
+        }
+
+        return found;
     }
 
     private V2Tile SpawnTile(int r, int c, int id, Vector2 anchor, bool spawnAboveTop)
@@ -300,7 +363,8 @@ public class V2MatchBoardManager : MonoBehaviour
         if (tile == null) tile = go.AddComponent<V2Tile>();
 
         tile.SetData(r, c, id);
-        tile.SetVisual(GetSpriteForId(id), GetColorForId(id));
+        tile.SetSpecial(V2SpecialType.None);
+        ApplyTileVisual(tile);
 
         SetTilePosition(tile, r, c, anchor, spawnAboveTop);
         return tile;
@@ -346,15 +410,15 @@ public class V2MatchBoardManager : MonoBehaviour
         return c;
     }
 
-    private void SwapCells(Vector2Int a, Vector2Int b)
+    private IEnumerator AnimateSwapCells(Vector2Int a, Vector2Int b)
     {
         V2Tile ta = grid[a.x, a.y];
         V2Tile tb = grid[b.x, b.y];
-        
+
         if (ta == null || tb == null)
         {
-            Debug.LogError($"[V2Board] SwapCells null tile! ta={ta}, tb={tb}");
-            return;
+            Debug.LogError($"[V2Board] AnimateSwapCells null tile! ta={ta}, tb={tb}");
+            yield break;
         }
 
         grid[a.x, a.y] = tb;
@@ -363,14 +427,76 @@ public class V2MatchBoardManager : MonoBehaviour
         (ta.row, ta.col) = (b.x, b.y);
         (tb.row, tb.col) = (a.x, a.y);
 
-        Vector2 anchor = GetAnchor(grid.GetLength(0), grid.GetLength(1));
-        SetTilePosition(ta, b.x, b.y, anchor, false);
-        SetTilePosition(tb, a.x, a.y, anchor, false);
+        Vector2 targetA = GetCellAnchoredPosition(b.x, b.y);
+        Vector2 targetB = GetCellAnchoredPosition(a.x, a.y);
+
+        RectTransform rtA = ta.GetComponent<RectTransform>();
+        RectTransform rtB = tb.GetComponent<RectTransform>();
+
+        if (rtA == null || rtB == null)
+            yield break;
+
+        Vector2 startA = rtA.anchoredPosition;
+        Vector2 startB = rtB.anchoredPosition;
+
+        float t = 0f;
+        float duration = Mathf.Max(0.01f, swapDuration);
+
+        while (t < duration)
+        {
+            t += Time.deltaTime;
+            float k = Mathf.Clamp01(t / duration);
+            rtA.anchoredPosition = Vector2.Lerp(startA, targetA, k);
+            rtB.anchoredPosition = Vector2.Lerp(startB, targetB, k);
+            yield return null;
+        }
+
+        rtA.anchoredPosition = targetA;
+        rtB.anchoredPosition = targetB;
     }
 
-    private HashSet<Vector2Int> FindAllMatches()
+    private IEnumerator ShakeTileAt(Vector2Int p)
+    {
+        if (!IsInside(p))
+            yield break;
+
+        V2Tile tile = grid[p.x, p.y];
+        if (tile == null)
+            yield break;
+
+        RectTransform rt = tile.GetComponent<RectTransform>();
+        if (rt == null)
+            yield break;
+
+        Vector2 basePos = rt.anchoredPosition;
+        float duration = Mathf.Max(0.05f, invalidShakeDuration);
+        float offset = Mathf.Max(2f, invalidShakeOffset);
+
+        float t = 0f;
+        while (t < duration)
+        {
+            t += Time.deltaTime;
+            float wave = Mathf.Sin((t / duration) * Mathf.PI * 6f);
+            rt.anchoredPosition = basePos + new Vector2(wave * offset, 0f);
+            yield return null;
+        }
+
+        rt.anchoredPosition = basePos;
+    }
+
+    private Vector2 GetCellAnchoredPosition(int r, int c)
+    {
+        Vector2 anchor = GetAnchor(grid.GetLength(0), grid.GetLength(1));
+        float x = (c - anchor.x) * cellSize;
+        float y = (anchor.y - r) * cellSize;
+        return new Vector2(x, y);
+    }
+
+    private HashSet<Vector2Int> FindAllMatches(out Dictionary<Vector2Int, V2SpecialType> specialSpawns)
     {
         HashSet<Vector2Int> set = new HashSet<Vector2Int>();
+        specialSpawns = new Dictionary<Vector2Int, V2SpecialType>();
+
         int rows = grid.GetLength(0);
         int cols = grid.GetLength(1);
 
@@ -382,7 +508,7 @@ public class V2MatchBoardManager : MonoBehaviour
             {
                 if (grid[r, c] == null || grid[r, c - 1] == null)
                 {
-                    if (streak >= 3) for (int k = 0; k < streak; k++) set.Add(new Vector2Int(r, c - 1 - k));
+                    RegisterHorizontalRun(r, c - streak, c - 1, streak, set, specialSpawns);
                     streak = 1;
                     continue;
                 }
@@ -390,11 +516,12 @@ public class V2MatchBoardManager : MonoBehaviour
                 if (grid[r, c].colorId == grid[r, c - 1].colorId) streak++;
                 else
                 {
-                    if (streak >= 3) for (int k = 0; k < streak; k++) set.Add(new Vector2Int(r, c - 1 - k));
+                    RegisterHorizontalRun(r, c - streak, c - 1, streak, set, specialSpawns);
                     streak = 1;
                 }
             }
-            if (streak >= 3) for (int k = 0; k < streak; k++) set.Add(new Vector2Int(r, cols - 1 - k));
+
+            RegisterHorizontalRun(r, cols - streak, cols - 1, streak, set, specialSpawns);
         }
 
         // Dikey kontrol
@@ -405,7 +532,7 @@ public class V2MatchBoardManager : MonoBehaviour
             {
                 if (grid[r, c] == null || grid[r - 1, c] == null)
                 {
-                    if (streak >= 3) for (int k = 0; k < streak; k++) set.Add(new Vector2Int(r - 1 - k, c));
+                    RegisterVerticalRun(c, r - streak, r - 1, streak, set, specialSpawns);
                     streak = 1;
                     continue;
                 }
@@ -413,14 +540,136 @@ public class V2MatchBoardManager : MonoBehaviour
                 if (grid[r, c].colorId == grid[r - 1, c].colorId) streak++;
                 else
                 {
-                    if (streak >= 3) for (int k = 0; k < streak; k++) set.Add(new Vector2Int(r - 1 - k, c));
+                    RegisterVerticalRun(c, r - streak, r - 1, streak, set, specialSpawns);
                     streak = 1;
                 }
             }
-            if (streak >= 3) for (int k = 0; k < streak; k++) set.Add(new Vector2Int(rows - 1 - k, c));
+
+            RegisterVerticalRun(c, rows - streak, rows - 1, streak, set, specialSpawns);
         }
 
         return set;
+    }
+
+    private void RegisterHorizontalRun(int row, int startCol, int endCol, int streak, HashSet<Vector2Int> matchSet, Dictionary<Vector2Int, V2SpecialType> specialSpawns)
+    {
+        if (streak < 3 || startCol < 0 || endCol < startCol)
+            return;
+
+        for (int c = startCol; c <= endCol; c++)
+            matchSet.Add(new Vector2Int(row, c));
+
+        if (streak >= 4)
+        {
+            int spawnCol = (startCol + endCol) / 2;
+            RegisterSpecialSpawn(new Vector2Int(row, spawnCol), V2SpecialType.RocketHorizontal, specialSpawns);
+        }
+    }
+
+    private void RegisterVerticalRun(int col, int startRow, int endRow, int streak, HashSet<Vector2Int> matchSet, Dictionary<Vector2Int, V2SpecialType> specialSpawns)
+    {
+        if (streak < 3 || startRow < 0 || endRow < startRow)
+            return;
+
+        for (int r = startRow; r <= endRow; r++)
+            matchSet.Add(new Vector2Int(r, col));
+
+        if (streak >= 4)
+        {
+            int spawnRow = (startRow + endRow) / 2;
+            RegisterSpecialSpawn(new Vector2Int(spawnRow, col), V2SpecialType.RocketVertical, specialSpawns);
+        }
+    }
+
+    private void RegisterSpecialSpawn(Vector2Int cell, V2SpecialType incomingType, Dictionary<Vector2Int, V2SpecialType> specialSpawns)
+    {
+        if (!specialSpawns.TryGetValue(cell, out V2SpecialType existing))
+        {
+            specialSpawns[cell] = incomingType;
+            return;
+        }
+
+        specialSpawns[cell] = MergeSpecialTypes(existing, incomingType);
+    }
+
+    private V2SpecialType MergeSpecialTypes(V2SpecialType a, V2SpecialType b)
+    {
+        if (a == b) return a;
+        if (a == V2SpecialType.None) return b;
+        if (b == V2SpecialType.None) return a;
+
+        if ((a == V2SpecialType.RocketHorizontal && b == V2SpecialType.RocketVertical) ||
+            (a == V2SpecialType.RocketVertical && b == V2SpecialType.RocketHorizontal))
+            return V2SpecialType.Bomb;
+
+        if (a == V2SpecialType.Bomb || b == V2SpecialType.Bomb)
+            return V2SpecialType.Bomb;
+
+        return a;
+    }
+
+    private HashSet<Vector2Int> ExpandMatchesWithSpecials(HashSet<Vector2Int> baseMatches)
+    {
+        HashSet<Vector2Int> expanded = new HashSet<Vector2Int>(baseMatches);
+        Queue<Vector2Int> queue = new Queue<Vector2Int>(baseMatches);
+
+        while (queue.Count > 0)
+        {
+            Vector2Int p = queue.Dequeue();
+            if (!IsInside(p)) continue;
+
+            V2Tile tile = grid[p.x, p.y];
+            if (tile == null) continue;
+
+            if (tile.specialType == V2SpecialType.RocketHorizontal)
+            {
+                for (int c = 0; c < grid.GetLength(1); c++)
+                    AddExpanded(new Vector2Int(p.x, c), expanded, queue);
+            }
+            else if (tile.specialType == V2SpecialType.RocketVertical)
+            {
+                for (int r = 0; r < grid.GetLength(0); r++)
+                    AddExpanded(new Vector2Int(r, p.y), expanded, queue);
+            }
+            else if (tile.specialType == V2SpecialType.Bomb)
+            {
+                for (int dr = -1; dr <= 1; dr++)
+                {
+                    for (int dc = -1; dc <= 1; dc++)
+                        AddExpanded(new Vector2Int(p.x + dr, p.y + dc), expanded, queue);
+                }
+            }
+        }
+
+        return expanded;
+    }
+
+    private void AddExpanded(Vector2Int p, HashSet<Vector2Int> expanded, Queue<Vector2Int> queue)
+    {
+        if (!IsInside(p)) return;
+        if (expanded.Add(p))
+            queue.Enqueue(p);
+    }
+
+    private void ApplyTileVisual(V2Tile tile)
+    {
+        if (tile == null) return;
+
+        Color tint = GetColorForId(tile.colorId);
+        switch (tile.specialType)
+        {
+            case V2SpecialType.RocketHorizontal:
+                tint = Color.Lerp(tint, Color.cyan, 0.35f);
+                break;
+            case V2SpecialType.RocketVertical:
+                tint = Color.Lerp(tint, new Color(1f, 0.4f, 1f), 0.35f);
+                break;
+            case V2SpecialType.Bomb:
+                tint = Color.Lerp(tint, Color.yellow, 0.45f);
+                break;
+        }
+
+        tile.SetVisual(GetSpriteForId(tile.colorId), tint);
     }
 
     private bool IsInside(Vector2Int p)
