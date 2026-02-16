@@ -1,0 +1,286 @@
+fileFormatVersion: 2
+guid: b2c4c449e830e584aa018a48d83c26a7
+TextureImporter:
+  internalIDToNameTable:
+  - first:
+      213: 8250052847551922460
+    second: "gpt-image-1.5_\U0001F3A8_TA\u015E_SET\u0130_6_ADET_1\uFE0F\u20E3_K\u0131rm\u0131z\u0131_M\xFCcevher_Ruby_Cut_Elmas_kesim_Ortada_-0-Photoroom_0"
+  - first:
+      213: -3104612603889851237
+    second: "gpt-image-1.5_\U0001F3A8_TA\u015E_SET\u0130_6_ADET_1\uFE0F\u20E3_K\u0131rm\u0131z\u0131_M\xFCcevher_Ruby_Cut_Elmas_kesim_Ortada_-0-Photoroom_1"
+  - first:
+      213: -8901400824199839988
+    second: "gpt-image-1.5_\U0001F3A8_TA\u015E_SET\u0130_6_ADET_1\uFE0F\u20E3_K\u0131rm\u0131z\u0131_M\xFCcevher_Ruby_Cut_Elmas_kesim_Ortada_-0-Photoroom_2"
+  - first:
+      213: -6668165992805829946
+    second: "gpt-image-1.5_\U0001F3A8_TA\u015E_SET\u0130_6_ADET_1\uFE0F\u20E3_K\u0131rm\u0131z\u0131_M\xFCcevher_Ruby_Cut_Elmas_kesim_Ortada_-0-Photoroom_3"
+  - first:
+      213: -7086483721285271485
+    second: "gpt-image-1.5_\U0001F3A8_TA\u015E_SET\u0130_6_ADET_1\uFE0F\u20E3_K\u0131rm\u0131z\u0131_M\xFCcevher_Ruby_Cut_Elmas_kesim_Ortada_-0-Photoroom_4"
+  - first:
+      213: -2660067730204565681
+    second: "gpt-image-1.5_\U0001F3A8_TA\u015E_SET\u0130_6_ADET_1\uFE0F\u20E3_K\u0131rm\u0131z\u0131_M\xFCcevher_Ruby_Cut_Elmas_kesim_Ortada_-0-Photoroom_5"
+  externalObjects: {}
+  serializedVersion: 13
+  mipmaps:
+    mipMapMode: 0
+    enableMipMap: 0
+    sRGBTexture: 1
+    linearTexture: 0
+    fadeOut: 0
+    borderMipMap: 0
+    mipMapsPreserveCoverage: 0
+    alphaTestReferenceValue: 0.5
+    mipMapFadeDistanceStart: 1
+    mipMapFadeDistanceEnd: 3
+  bumpmap:
+    convertToNormalMap: 0
+    externalNormalMap: 0
+    heightScale: 0.25
+    normalMapFilter: 0
+    flipGreenChannel: 0
+  isReadable: 0
+  streamingMipmaps: 0
+  streamingMipmapsPriority: 0
+  vTOnly: 0
+  ignoreMipmapLimit: 0
+  grayScaleToAlpha: 0
+  generateCubemap: 6
+  cubemapConvolution: 0
+  seamlessCubemap: 0
+  textureFormat: 1
+  maxTextureSize: 2048
+  textureSettings:
+    serializedVersion: 2
+    filterMode: 1
+    aniso: 1
+    mipBias: 0
+    wrapU: 1
+    wrapV: 1
+    wrapW: 1
+  nPOTScale: 0
+  lightmap: 0
+  compressionQuality: 50
+  spriteMode: 2
+  spriteExtrude: 1
+  spriteMeshType: 1
+  alignment: 0
+  spritePivot: {x: 0.5, y: 0.5}
+  spritePixelsToUnits: 100
+  spriteBorder: {x: 0, y: 0, z: 0, w: 0}
+  spriteGenerateFallbackPhysicsShape: 1
+  alphaUsage: 1
+  alphaIsTransparency: 1
+  spriteTessellationDetail: -1
+  textureType: 8
+  textureShape: 1
+  singleChannelComponent: 0
+  flipbookRows: 1
+  flipbookColumns: 1
+  maxTextureSizeSet: 0
+  compressionQualitySet: 0
+  textureFormatSet: 0
+  ignorePngGamma: 0
+  applyGammaDecoding: 0
+  swizzle: 50462976
+  cookieLightType: 0
+  platformSettings:
+  - serializedVersion: 4
+    buildTarget: DefaultTexturePlatform
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: Standalone
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: Android
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  spriteSheet:
+    serializedVersion: 2
+    sprites:
+    - serializedVersion: 2
+      name: "gpt-image-1.5_\U0001F3A8_TA\u015E_SET\u0130_6_ADET_1\uFE0F\u20E3_K\u0131rm\u0131z\u0131_M\xFCcevher_Ruby_Cut_Elmas_kesim_Ortada_-0-Photoroom_0"
+      rect:
+        serializedVersion: 2
+        x: 189
+        y: 501
+        width: 276
+        height: 228
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: c11488caa531e7270800000000000000
+      internalID: 8250052847551922460
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: "gpt-image-1.5_\U0001F3A8_TA\u015E_SET\u0130_6_ADET_1\uFE0F\u20E3_K\u0131rm\u0131z\u0131_M\xFCcevher_Ruby_Cut_Elmas_kesim_Ortada_-0-Photoroom_1"
+      rect:
+        serializedVersion: 2
+        x: 543
+        y: 490
+        width: 194
+        height: 254
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: b94e1f329433ae4d0800000000000000
+      internalID: -3104612603889851237
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: "gpt-image-1.5_\U0001F3A8_TA\u015E_SET\u0130_6_ADET_1\uFE0F\u20E3_K\u0131rm\u0131z\u0131_M\xFCcevher_Ruby_Cut_Elmas_kesim_Ortada_-0-Photoroom_2"
+      rect:
+        serializedVersion: 2
+        x: 839
+        y: 489
+        width: 238
+        height: 252
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: c0ff23eac1fd77480800000000000000
+      internalID: -8901400824199839988
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: "gpt-image-1.5_\U0001F3A8_TA\u015E_SET\u0130_6_ADET_1\uFE0F\u20E3_K\u0131rm\u0131z\u0131_M\xFCcevher_Ruby_Cut_Elmas_kesim_Ortada_-0-Photoroom_3"
+      rect:
+        serializedVersion: 2
+        x: 208
+        y: 174
+        width: 241
+        height: 210
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 6c2f777eb5ae573a0800000000000000
+      internalID: -6668165992805829946
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: "gpt-image-1.5_\U0001F3A8_TA\u015E_SET\u0130_6_ADET_1\uFE0F\u20E3_K\u0131rm\u0131z\u0131_M\xFCcevher_Ruby_Cut_Elmas_kesim_Ortada_-0-Photoroom_4"
+      rect:
+        serializedVersion: 2
+        x: 549
+        y: 154
+        width: 185
+        height: 254
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 340043ee990c7ad90800000000000000
+      internalID: -7086483721285271485
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: "gpt-image-1.5_\U0001F3A8_TA\u015E_SET\u0130_6_ADET_1\uFE0F\u20E3_K\u0131rm\u0131z\u0131_M\xFCcevher_Ruby_Cut_Elmas_kesim_Ortada_-0-Photoroom_5"
+      rect:
+        serializedVersion: 2
+        x: 844
+        y: 148
+        width: 233
+        height: 255
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: f4f5da63e7a851bd0800000000000000
+      internalID: -2660067730204565681
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    outline: []
+    customData: 
+    physicsShape: []
+    bones: []
+    spriteID: 
+    internalID: 0
+    vertices: []
+    indices: 
+    edges: []
+    weights: []
+    secondaryTextures: []
+    spriteCustomMetadata:
+      entries: []
+    nameFileIdTable:
+      "gpt-image-1.5_\U0001F3A8_TA\u015E_SET\u0130_6_ADET_1\uFE0F\u20E3_K\u0131rm\u0131z\u0131_M\xFCcevher_Ruby_Cut_Elmas_kesim_Ortada_-0-Photoroom_0": 8250052847551922460
+      "gpt-image-1.5_\U0001F3A8_TA\u015E_SET\u0130_6_ADET_1\uFE0F\u20E3_K\u0131rm\u0131z\u0131_M\xFCcevher_Ruby_Cut_Elmas_kesim_Ortada_-0-Photoroom_1": -3104612603889851237
+      "gpt-image-1.5_\U0001F3A8_TA\u015E_SET\u0130_6_ADET_1\uFE0F\u20E3_K\u0131rm\u0131z\u0131_M\xFCcevher_Ruby_Cut_Elmas_kesim_Ortada_-0-Photoroom_2": -8901400824199839988
+      "gpt-image-1.5_\U0001F3A8_TA\u015E_SET\u0130_6_ADET_1\uFE0F\u20E3_K\u0131rm\u0131z\u0131_M\xFCcevher_Ruby_Cut_Elmas_kesim_Ortada_-0-Photoroom_3": -6668165992805829946
+      "gpt-image-1.5_\U0001F3A8_TA\u015E_SET\u0130_6_ADET_1\uFE0F\u20E3_K\u0131rm\u0131z\u0131_M\xFCcevher_Ruby_Cut_Elmas_kesim_Ortada_-0-Photoroom_4": -7086483721285271485
+      "gpt-image-1.5_\U0001F3A8_TA\u015E_SET\u0130_6_ADET_1\uFE0F\u20E3_K\u0131rm\u0131z\u0131_M\xFCcevher_Ruby_Cut_Elmas_kesim_Ortada_-0-Photoroom_5": -2660067730204565681
+  mipmapLimitGroupName: 
+  pSDRemoveMatte: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
