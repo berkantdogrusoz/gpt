@@ -487,16 +487,14 @@ MonoBehaviour:
   damagePerClearedTile: 1
   maxProjectilesPerBurst: 8
   attackTravelDuration: 0.22
-  bombExplosionPrefab: {fileID: 725748389856807714, guid: 4bda94453d2ca7444a0fff05b2d425f5, type: 3}
-  lineClearFxPrefab: {fileID: 725748389856807714, guid: 4bda94453d2ca7444a0fff05b2d425f5, type: 3}
+  bombExplosionPrefab: {fileID: 1885001601902928413, guid: e099145716a32954aa76890dfa14ce18, type: 3}
+  lineClearFxPrefab: {fileID: 1885001601902928413, guid: e099145716a32954aa76890dfa14ce18, type: 3}
   specialFxLifetime: 1.2
   bombChargeDuration: 0.85
   bombHoldDuration: 0.45
   bombLiftScale: 1.18
   bombShakeAmount: 10
-  normalTileClearFxPrefab: {fileID: 725748389856807714, guid: 4bda94453d2ca7444a0fff05b2d425f5, type: 3}
-  bombChildFxName: Patlama
-  lineChildFxName: Elektrik efekt
+  normalTileClearFxPrefab: {fileID: 0}
 --- !u!4 &275077149
 Transform:
   m_ObjectHideFlags: 0
@@ -1535,7 +1533,7 @@ GameObject:
   - component: {fileID: 1233425936}
   - component: {fileID: 1233425935}
   m_Layer: 5
-  m_Name: LOSE
+  m_Name: Ayarlar panel
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0

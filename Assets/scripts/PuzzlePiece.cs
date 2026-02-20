@@ -5,7 +5,7 @@ using UnityEngine.EventSystems;
 
 [RequireComponent(typeof(CanvasGroup))]
 public class PuzzlePiece : MonoBehaviour,
-    IBeginDragHandler, IDragHandler, IEndDragHandler
+    IBeginDragHandler, IDragHandler, IEndDragHandler, IInitializePotentialDragHandler
 {
     [Header("Shape")]
     public ShapeData shapeData;
@@ -44,12 +44,21 @@ public class PuzzlePiece : MonoBehaviour,
 
     private List<GameObject> previewVisuals = new List<GameObject>();
     private SlotCell lastPreviewAnchor = null;
+    private Vector2Int currentDragAnchorOffset = Vector2Int.zero;
 
     private void Awake()
     {
         rect = GetComponent<RectTransform>();
         cg = GetComponent<CanvasGroup>();
         canvas = GetComponentInParent<Canvas>();
+    }
+
+    // Drag başlangıcındaki EventSystem threshold'unu kapat.
+    // Böylece mobilde ilk dokunuştan hemen sonra sürükleme başlar.
+    public void OnInitializePotentialDrag(PointerEventData eventData)
+    {
+        if (eventData != null)
+            eventData.useDragThreshold = false;
     }
 
     private void Start()
@@ -199,6 +208,11 @@ public class PuzzlePiece : MonoBehaviour,
         startPos = rect != null ? rect.anchoredPosition : Vector2.zero;
         startParent = transform.parent;
 
+        currentDragAnchorOffset = Vector2Int.zero;
+        Vector2Int touchedCell = GetCellIndexClosestToScreenPoint(eventData.position);
+        if (touchedCell.x != -1)
+            currentDragAnchorOffset = touchedCell;
+
         ClearOccupiedSlots();
 
         if (cg != null)
@@ -262,7 +276,7 @@ public class PuzzlePiece : MonoBehaviour,
         }
 
         // Piece'in anchor (0,0) hücresinin world pozisyonunu bul
-        Vector3 pieceAnchorWorldPos = GetAnchorCellWorldPosition();
+        Vector3 pieceAnchorWorldPos = GetCurrentDragAnchorWorldPosition();
         Vector2 pieceScreenPoint = RectTransformUtility.WorldToScreenPoint(canvas != null ? canvas.worldCamera : null, pieceAnchorWorldPos);
 
         var board = PuzzleManager.Instance.boardSpawner;
@@ -303,7 +317,7 @@ public class PuzzlePiece : MonoBehaviour,
         if (PuzzleManager.Instance == null || PuzzleManager.Instance.boardSpawner == null) return;
 
         // Piece'in anchor (0,0) hücresinin world pozisyonunu bul
-        Vector3 pieceAnchorWorldPos = GetAnchorCellWorldPosition();
+        Vector3 pieceAnchorWorldPos = GetCurrentDragAnchorWorldPosition();
         Vector2 pieceScreenPoint = RectTransformUtility.WorldToScreenPoint(canvas != null ? canvas.worldCamera : null, pieceAnchorWorldPos);
 
         var board = PuzzleManager.Instance.boardSpawner;
@@ -335,12 +349,18 @@ public class PuzzlePiece : MonoBehaviour,
         }
     }
 
-    // Shape anchor'ı olan (0,0) hücresinin world pozisyonunu döndür
-    private Vector3 GetAnchorCellWorldPosition()
+    // Drag sırasında parmağın aldığı hücreyi anchor kabul et
+    private Vector3 GetCurrentDragAnchorWorldPosition()
     {
         if (cellVisuals != null && cellPositions != null)
         {
             int count = Mathf.Min(cellVisuals.Count, cellPositions.Count);
+            for (int i = 0; i < count; i++)
+            {
+                if (cellPositions[i] == currentDragAnchorOffset && cellVisuals[i] != null)
+                    return cellVisuals[i].transform.position;
+            }
+
             for (int i = 0; i < count; i++)
             {
                 if (cellPositions[i] == Vector2Int.zero && cellVisuals[i] != null)
@@ -348,8 +368,6 @@ public class PuzzlePiece : MonoBehaviour,
             }
         }
 
-        // (0,0) hücresi yoksa da snap mantığı "virtual anchor" (piece root) üzerinden çalışır.
-        // Bu yüzden fallback olarak piece root world pos kullanılmalı.
         return transform.position;
     }
 
@@ -361,8 +379,8 @@ public class PuzzlePiece : MonoBehaviour,
 
         foreach (var cellOffset in cells)
         {
-            int targetRow = anchorSlot.row + cellOffset.y;
-            int targetCol = anchorSlot.col + cellOffset.x;
+            int targetRow = anchorSlot.row + (cellOffset.y - currentDragAnchorOffset.y);
+            int targetCol = anchorSlot.col + (cellOffset.x - currentDragAnchorOffset.x);
 
             SlotCell targetSlot = PuzzleManager.Instance.GetSlotAt(targetRow, targetCol);
             if (targetSlot == null) continue;
@@ -397,23 +415,48 @@ public class PuzzlePiece : MonoBehaviour,
 
     private Vector2Int GetCellIndexClosestToScreenPoint(Vector2 screenPoint)
     {
-        if (cellVisuals == null || cellVisuals.Count == 0) return new Vector2Int(-1, -1);
-        if (canvas == null) canvas = GetComponentInParent<Canvas>();
+        if (cellVisuals == null || cellVisuals.Count == 0)
+            return Vector2Int.zero;
 
-        // Parmak pozisyonunu dragOffsetY kadar yukarı kaydır (piece'in gerçek pozisyonuna denk gelsin)
-        Vector2 adjustedScreenPoint = screenPoint + new Vector2(0, dragOffsetY);
+        if (canvas == null)
+            canvas = GetComponentInParent<Canvas>();
 
-        int bestIdx = -1;
-        float bestDist = float.MaxValue;
+        Camera cam = canvas != null ? canvas.worldCamera : null;
+        float scale = canvas != null ? canvas.scaleFactor : 1f;
+
+        // 1) Önce gerçekten dokunulan hücreyi bul: hücre rect'inin içinde mi?
+        // Mobilde merkez zorunluluğunu kaldırır; hücrenin herhangi bir yerine dokunmak yeter.
+        float touchPadding = Mathf.Max(2f, cellSize * 0.18f) * Mathf.Max(0.01f, scale);
         for (int i = 0; i < cellVisuals.Count; i++)
         {
-            var go = cellVisuals[i];
+            GameObject go = cellVisuals[i];
             if (go == null) continue;
+
             RectTransform rt = go.GetComponent<RectTransform>();
             if (rt == null) continue;
 
-            Vector2 cellScreen = RectTransformUtility.WorldToScreenPoint(canvas != null ? canvas.worldCamera : null, rt.position);
-            float d = Vector2.Distance(adjustedScreenPoint, cellScreen);
+            Vector2 cellScreen = RectTransformUtility.WorldToScreenPoint(cam, rt.position);
+            float half = (cellSize * scale) * 0.5f + touchPadding;
+
+            bool insideX = screenPoint.x >= (cellScreen.x - half) && screenPoint.x <= (cellScreen.x + half);
+            bool insideY = screenPoint.y >= (cellScreen.y - half) && screenPoint.y <= (cellScreen.y + half);
+            if (insideX && insideY)
+                return cellPositions[i];
+        }
+
+        // 2) Fallback: en yakın hücreye kilitle (merkez şartı olmasın)
+        int bestIdx = 0;
+        float bestDist = float.MaxValue;
+        for (int i = 0; i < cellVisuals.Count; i++)
+        {
+            GameObject go = cellVisuals[i];
+            if (go == null) continue;
+
+            RectTransform rt = go.GetComponent<RectTransform>();
+            if (rt == null) continue;
+
+            Vector2 cellScreen = RectTransformUtility.WorldToScreenPoint(cam, rt.position);
+            float d = (screenPoint - cellScreen).sqrMagnitude;
             if (d < bestDist)
             {
                 bestDist = d;
@@ -421,15 +464,7 @@ public class PuzzlePiece : MonoBehaviour,
             }
         }
 
-        float scale = canvas != null ? canvas.scaleFactor : 1f;
-        float thresh = Mathf.Max(1f, cellSize * scale * snapThresholdFactor);
-        if (bestIdx >= 0 && bestDist <= thresh)
-        {
-            var cp = cellPositions[bestIdx];
-            return new Vector2Int(cp.x, cp.y);
-        }
-
-        return new Vector2Int(-1, -1);
+        return cellPositions[Mathf.Clamp(bestIdx, 0, cellPositions.Count - 1)];
     }
 
     private bool CanPlaceShapeAt(SlotCell anchorSlot)
@@ -441,8 +476,8 @@ public class PuzzlePiece : MonoBehaviour,
 
         foreach (var cellOffset in cells)
         {
-            int targetRow = anchorSlot.row + cellOffset.y;
-            int targetCol = anchorSlot.col + cellOffset.x;
+            int targetRow = anchorSlot.row + (cellOffset.y - currentDragAnchorOffset.y);
+            int targetCol = anchorSlot.col + (cellOffset.x - currentDragAnchorOffset.x);
 
             SlotCell targetSlot = PuzzleManager.Instance.GetSlotAt(targetRow, targetCol);
 
@@ -462,8 +497,8 @@ public class PuzzlePiece : MonoBehaviour,
 
         foreach (var cellOffset in cells)
         {
-            int targetRow = anchorSlot.row + cellOffset.y;
-            int targetCol = anchorSlot.col + cellOffset.x;
+            int targetRow = anchorSlot.row + (cellOffset.y - currentDragAnchorOffset.y);
+            int targetCol = anchorSlot.col + (cellOffset.x - currentDragAnchorOffset.x);
 
             SlotCell targetSlot = PuzzleManager.Instance.GetSlotAt(targetRow, targetCol);
 
@@ -477,7 +512,12 @@ public class PuzzlePiece : MonoBehaviour,
 
         Transform parentTransform = anchorSlot.snapPoint != null ? (Transform)anchorSlot.snapPoint : anchorSlot.transform;
         transform.SetParent(parentTransform, false);
-        if (rect != null) rect.anchoredPosition = Vector2.zero;
+        if (rect != null)
+        {
+            float offsetX = -currentDragAnchorOffset.x * cellSize;
+            float offsetY = currentDragAnchorOffset.y * cellSize;
+            rect.anchoredPosition = new Vector2(offsetX, offsetY);
+        }
 
         EnsurePieceOnTop();
 
@@ -563,8 +603,8 @@ public class PuzzlePiece : MonoBehaviour,
         for (int i = 0; i < cellPositions.Count; i++)
         {
             var offset = cellPositions[i];
-            int absRow = anchorSlot != null ? anchorSlot.row + offset.y : 0;
-            int absCol = anchorSlot != null ? anchorSlot.col + offset.x : 0;
+            int absRow = anchorSlot != null ? anchorSlot.row + (offset.y - currentDragAnchorOffset.y) : 0;
+            int absCol = anchorSlot != null ? anchorSlot.col + (offset.x - currentDragAnchorOffset.x) : 0;
 
             SlotCell absSlot = PuzzleManager.Instance != null ? PuzzleManager.Instance.GetSlotAt(absRow, absCol) : null;
             if (absSlot != null && clearedSlots.Contains(absSlot))

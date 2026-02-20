@@ -13,6 +13,7 @@ public class V2MatchBoardManager : MonoBehaviour
     public V2BossEnemy bossEnemy;
     public Transform bossTarget;
     public GameObject attackProjectilePrefab;
+    public V2AudioManager audioManager;
 
     [Header("Board Layout")]
     public float cellSize = 104f;
@@ -40,6 +41,7 @@ public class V2MatchBoardManager : MonoBehaviour
 
     [Header("Animation")]
     public float fallStepDelay = 0.03f;
+    public float fallAnimationDuration = 0.5f;
     public float swapDuration = 0.12f;
     public float invalidShakeDuration = 0.12f;
     public float invalidShakeOffset = 10f;
@@ -85,6 +87,13 @@ public class V2MatchBoardManager : MonoBehaviour
     private int initialSpawnSequence;
     private int refillSpawnSequence;
 
+    private struct FallAnimationItem
+    {
+        public RectTransform rt;
+        public Vector2 from;
+        public Vector2 to;
+    }
+
     // Public getter'lar - Input controller için
     public int Rows => levelData != null ? levelData.rows : 8;
     public int Cols => levelData != null ? levelData.cols : 8;
@@ -123,6 +132,10 @@ public class V2MatchBoardManager : MonoBehaviour
 
         if (bossEnemy != null)
             bossEnemy.ResetBoss();
+
+        EnsureAudioManager();
+        if (audioManager != null)
+            audioManager.PlayGameplayMusic();
 
         BuildBoard();
         RefreshHUD();
@@ -245,6 +258,7 @@ public class V2MatchBoardManager : MonoBehaviour
         }
 
         Debug.Log($"[V2Board] Starting swap: {a} <-> {b}");
+        PlaySwapSfx();
         StartCoroutine(SwapResolve(a, b));
     }
 
@@ -323,13 +337,17 @@ public class V2MatchBoardManager : MonoBehaviour
     private IEnumerator ResolveSpecialSwap(Vector2Int a, Vector2Int b)
     {
         HashSet<Vector2Int> cellsToClear = new HashSet<Vector2Int>();
+        HashSet<Vector2Int> delayedBombFxCells = new HashSet<Vector2Int>();
         List<IEnumerator> anims = new List<IEnumerator>();
 
-        CollectSpecialSwapTargets(a, cellsToClear, anims);
-        CollectSpecialSwapTargets(b, cellsToClear, anims);
+        CollectSpecialSwapTargets(a, cellsToClear, delayedBombFxCells, anims);
+        CollectSpecialSwapTargets(b, cellsToClear, delayedBombFxCells, anims);
 
         foreach (IEnumerator anim in anims)
             yield return StartCoroutine(anim);
+
+        if (delayedBombFxCells.Count > 0)
+            SpawnBombAreaFx(delayedBombFxCells);
 
         int clearedCount = ClearCellsDirect(cellsToClear);
         if (clearedCount > 0)
@@ -339,14 +357,15 @@ public class V2MatchBoardManager : MonoBehaviour
         }
 
         yield return null;
-        CollapseColumns();
-        yield return null;
-        RefillFromTop();
+        List<FallAnimationItem> fallItems = new List<FallAnimationItem>();
+        CollapseColumns(fallItems);
+        RefillFromTop(fallItems);
+        yield return StartCoroutine(AnimateFallItems(fallItems));
         yield return new WaitForSeconds(fallStepDelay);
         RefreshHUD();
     }
 
-    private void CollectSpecialSwapTargets(Vector2Int origin, HashSet<Vector2Int> cellsToClear, List<IEnumerator> anims)
+    private void CollectSpecialSwapTargets(Vector2Int origin, HashSet<Vector2Int> cellsToClear, HashSet<Vector2Int> delayedBombFxCells, List<IEnumerator> anims)
     {
         if (!IsInside(origin))
             return;
@@ -359,28 +378,28 @@ public class V2MatchBoardManager : MonoBehaviour
         {
             anims.Add(AnimateBombDetonation(tile));
             AddBombArea4x4(origin, cellsToClear);
-            SpawnBombAreaFx(cellsToClear);
+            AddBombArea4x4(origin, delayedBombFxCells);
             return;
         }
 
         if (tile.specialType == V2SpecialType.Disco)
         {
             AddCrossArea(origin, cellsToClear);
-            SpawnLineClearFx(origin);
+            SpawnLineClearFx(origin, V2SpecialType.Disco);
             return;
         }
 
         if (tile.specialType == V2SpecialType.RocketHorizontal)
         {
             AddHorizontalArea(origin, cellsToClear);
-            SpawnLineClearFx(origin);
+            SpawnLineClearFx(origin, V2SpecialType.RocketHorizontal);
             return;
         }
 
         if (tile.specialType == V2SpecialType.RocketVertical)
         {
             AddVerticalArea(origin, cellsToClear);
-            SpawnLineClearFx(origin);
+            SpawnLineClearFx(origin, V2SpecialType.RocketVertical);
             return;
         }
     }
@@ -402,6 +421,9 @@ public class V2MatchBoardManager : MonoBehaviour
             grid[p.x, p.y] = null;
             cleared++;
         }
+
+        if (cleared > 0)
+            PlayClearSfx();
 
         if (verboseLogs)
             Debug.Log($"V2 special cleared={cleared}");
@@ -495,14 +517,18 @@ public class V2MatchBoardManager : MonoBehaviour
         if (bombExplosionPrefab == null || cells == null)
             return;
 
+        PlaySpecialTypeSfx(V2SpecialType.Bomb);
+
         foreach (Vector2Int cell in cells)
             SpawnFxAtCell(cell, bombExplosionPrefab, specialFxLifetime * 0.8f);
     }
 
-    private void SpawnLineClearFx(Vector2Int center)
+    private void SpawnLineClearFx(Vector2Int center, V2SpecialType specialType)
     {
         if (lineClearFxPrefab == null)
             return;
+
+        PlaySpecialTypeSfx(specialType);
 
         for (int c = 0; c < grid.GetLength(1); c++)
             SpawnFxAtCell(new Vector2Int(center.x, c), lineClearFxPrefab, specialFxLifetime * 0.8f);
@@ -536,7 +562,6 @@ public class V2MatchBoardManager : MonoBehaviour
         Transform parent = boardRoot != null ? (boardRoot.parent != null ? boardRoot.parent : boardRoot) : null;
         GameObject fx = parent != null ? Instantiate(prefab, parent) : Instantiate(prefab);
         fx.transform.position = worldPos;
-        fx.transform.localScale = Vector3.one;
 
         if (lifetime > 0f)
             Destroy(fx, lifetime);
@@ -553,10 +578,10 @@ public class V2MatchBoardManager : MonoBehaviour
 
         yield return null;
 
-        CollapseColumns();
-        yield return null;
-
-        RefillFromTop();
+        List<FallAnimationItem> fallItems = new List<FallAnimationItem>();
+        CollapseColumns(fallItems);
+        RefillFromTop(fallItems);
+        yield return StartCoroutine(AnimateFallItems(fallItems));
         yield return new WaitForSeconds(fallStepDelay);
 
         RefreshHUD();
@@ -585,15 +610,17 @@ public class V2MatchBoardManager : MonoBehaviour
             cleared++;
         }
 
+        if (cleared > 0)
+            PlayClearSfx();
+
         if (verboseLogs) Debug.Log($"V2 cleared={cleared}");
         return cleared;
     }
 
-    private void CollapseColumns()
+    private void CollapseColumns(List<FallAnimationItem> fallItems)
     {
         int rows = grid.GetLength(0);
         int cols = grid.GetLength(1);
-        Vector2 anchor = GetAnchor(rows, cols);
 
         for (int c = 0; c < cols; c++)
         {
@@ -611,7 +638,17 @@ public class V2MatchBoardManager : MonoBehaviour
 
                     tile.row = writeRow;
                     tile.col = c;
-                    SetTilePosition(tile, writeRow, c, anchor, false);
+
+                    RectTransform rt = tile.GetComponent<RectTransform>();
+                    if (rt != null)
+                    {
+                        fallItems.Add(new FallAnimationItem
+                        {
+                            rt = rt,
+                            from = rt.anchoredPosition,
+                            to = GetCellAnchoredPosition(writeRow, c)
+                        });
+                    }
                 }
 
                 writeRow--;
@@ -619,7 +656,7 @@ public class V2MatchBoardManager : MonoBehaviour
         }
     }
 
-    private void RefillFromTop()
+    private void RefillFromTop(List<FallAnimationItem> fallItems)
     {
         int rows = grid.GetLength(0);
         int cols = grid.GetLength(1);
@@ -632,12 +669,54 @@ public class V2MatchBoardManager : MonoBehaviour
             {
                 if (grid[r, c] != null) continue;
 
-                // Not: Spawn-above davranışı animasyonla desteklenmediğinde taşlar
-                // görünür ızgara dışına düşebiliyor. Stabil gameplay için doğrudan
-                // hedef hücreye spawn ediyoruz.
-                V2Tile tile = SpawnTile(r, c, RandomTileId(), anchor, spawnAboveTop: false, isRefill: true);
+                V2Tile tile = SpawnTile(r, c, RandomTileId(), anchor, spawnAboveTop: true, isRefill: true);
                 grid[r, c] = tile;
+
+                RectTransform rt = tile != null ? tile.GetComponent<RectTransform>() : null;
+                if (rt != null)
+                {
+                    fallItems.Add(new FallAnimationItem
+                    {
+                        rt = rt,
+                        from = rt.anchoredPosition,
+                        to = GetCellAnchoredPosition(r, c)
+                    });
+                }
             }
+        }
+    }
+
+    private IEnumerator AnimateFallItems(List<FallAnimationItem> fallItems)
+    {
+        if (fallItems == null || fallItems.Count == 0)
+            yield break;
+
+        float duration = Mathf.Max(0.05f, fallAnimationDuration);
+        float t = 0f;
+
+        while (t < duration)
+        {
+            t += Time.deltaTime;
+            float k = Mathf.Clamp01(t / duration);
+            float eased = 1f - Mathf.Pow(1f - k, 3f);
+
+            for (int i = 0; i < fallItems.Count; i++)
+            {
+                RectTransform rt = fallItems[i].rt;
+                if (rt == null)
+                    continue;
+
+                rt.anchoredPosition = Vector2.LerpUnclamped(fallItems[i].from, fallItems[i].to, eased);
+            }
+
+            yield return null;
+        }
+
+        for (int i = 0; i < fallItems.Count; i++)
+        {
+            RectTransform rt = fallItems[i].rt;
+            if (rt != null)
+                rt.anchoredPosition = fallItems[i].to;
         }
     }
 
@@ -1223,6 +1302,51 @@ public class V2MatchBoardManager : MonoBehaviour
         hud.SetScore(score);
         hud.SetMoves(movesLeft);
         hud.SetTarget(levelData.targetScore);
+    }
+
+    private void EnsureAudioManager()
+    {
+        if (audioManager == null)
+            audioManager = V2AudioManager.Instance;
+
+        if (audioManager == null)
+            audioManager = FindFirstObjectByType<V2AudioManager>();
+    }
+
+    private void PlaySwapSfx()
+    {
+        EnsureAudioManager();
+        if (audioManager != null)
+            audioManager.PlaySwap();
+    }
+
+    private void PlayClearSfx()
+    {
+        EnsureAudioManager();
+        if (audioManager != null)
+            audioManager.PlayClear();
+    }
+
+    private void PlaySpecialTypeSfx(V2SpecialType type)
+    {
+        EnsureAudioManager();
+        if (audioManager == null)
+            return;
+
+        if (type == V2SpecialType.Bomb)
+        {
+            audioManager.PlayBombSpecial();
+            return;
+        }
+
+        if (type == V2SpecialType.Disco)
+        {
+            audioManager.PlayDiscoSpecial();
+            return;
+        }
+
+        if (type == V2SpecialType.RocketHorizontal || type == V2SpecialType.RocketVertical)
+            audioManager.PlayLaneSpecial();
     }
 
     private void ClearBoard()

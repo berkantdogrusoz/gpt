@@ -77,6 +77,12 @@ public class PuzzleManager : MonoBehaviour
     [Header("Row Clear Animation")]
     public float slotClearDelay = 0.08f;
 
+    [Header("Row Clear Extra FX")]
+    [Tooltip("Satır temizlenirken mevcut efektlere ek olarak spawn edilecek ekstra particle prefab.")]
+    public GameObject extraSlotClearFxPrefab;
+    [Tooltip("Ekstra slot temizleme efektinin yaşam süresi.")]
+    public float extraSlotClearFxLifetime = 1.5f;
+
     [Header("Floating Text")]
     public GameObject floatingTextPrefab;
     public Transform floatingTextParent;
@@ -265,11 +271,19 @@ public class PuzzleManager : MonoBehaviour
             }
         }
 
+        // Ekstra clear FX'i, mevcut "büyüyüp-yok olma" animasyonuyla aynı anda başlat.
+        foreach (var s in slotsToClear)
+        {
+            if (s == null) continue;
+            SpawnExtraSlotClearFx(s);
+        }
+
         yield return new WaitForSeconds(0.4f);
 
         foreach (var s in slotsToClear)
         {
             if (s == null) continue;
+
             s.currentPiece = null;
             s.SetHighlight(false);
         }
@@ -296,6 +310,24 @@ public class PuzzleManager : MonoBehaviour
         }
 
         CheckLoseCondition();
+    }
+
+    private void SpawnExtraSlotClearFx(SlotCell slot)
+    {
+        if (extraSlotClearFxPrefab == null || slot == null)
+            return;
+
+        Transform parent = boardSpawner != null && boardSpawner.transform != null
+            ? boardSpawner.transform
+            : null;
+
+        Vector3 pos = slot.transform.position;
+        GameObject fx = parent != null
+            ? Instantiate(extraSlotClearFxPrefab, pos, Quaternion.identity, parent)
+            : Instantiate(extraSlotClearFxPrefab, pos, Quaternion.identity);
+
+        if (extraSlotClearFxLifetime > 0f)
+            Destroy(fx, extraSlotClearFxLifetime);
     }
 
     private void ShowRowClearText(int rowCount, int combo)

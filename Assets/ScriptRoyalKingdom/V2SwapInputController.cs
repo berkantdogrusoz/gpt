@@ -15,8 +15,33 @@ public class V2SwapInputController : MonoBehaviour
     private Vector2 pointerDownScreen;
     private Vector2Int pointerDownCell;
 
+    private void Awake()
+    {
+        AutoAssignReferences();
+    }
+
+    private void OnEnable()
+    {
+        AutoAssignReferences();
+    }
+
+    private void AutoAssignReferences()
+    {
+        if (board == null)
+            board = FindFirstObjectByType<V2MatchBoardManager>();
+
+        if (boardRect == null && board != null)
+            boardRect = board.boardRoot;
+
+        if (uiCamera == null)
+            uiCamera = Camera.main;
+    }
+
     private void Update()
     {
+        if (board == null)
+            return;
+
         if (Input.GetMouseButtonDown(0))
             OnPointerDown(Input.mousePosition);
 

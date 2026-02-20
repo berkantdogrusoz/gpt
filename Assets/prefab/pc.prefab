@@ -108,7 +108,7 @@ MonoBehaviour:
   snapThresholdFactor: 0.75
   trayScale: 0.6
   dragScale: 1
-  dragOffsetY: 100
+  dragOffsetY: 120
   showPreview: 1
   previewColor: {r: 1, g: 1, b: 1, a: 0.27450982}
   occupiedSlots: []
