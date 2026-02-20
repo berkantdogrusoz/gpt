@@ -6,6 +6,10 @@ public class V2MatchBoardManager : MonoBehaviour
 {
     [Header("References")]
     public V2LevelData levelData;
+    [Header("Level Queue (Optional)")]
+    public V2LevelData[] levelQueue;
+    public int initialLevelQueueIndex = 0;
+
     public RectTransform boardRoot;
     public GameObject tilePrefab;
     public GameObject slotPrefab; // Arka plan slot prefab'ı
@@ -86,6 +90,7 @@ public class V2MatchBoardManager : MonoBehaviour
 
     private int initialSpawnSequence;
     private int refillSpawnSequence;
+    private int currentLevelQueueIndex;
 
     private struct FallAnimationItem
     {
@@ -99,6 +104,16 @@ public class V2MatchBoardManager : MonoBehaviour
     public int Cols => levelData != null ? levelData.cols : 8;
     public float CellSize => cellSize;
     public bool IsInputLocked => busy || levelEnded;
+
+    private void Awake()
+    {
+        if (levelQueue != null && levelQueue.Length > 0)
+        {
+            currentLevelQueueIndex = Mathf.Clamp(initialLevelQueueIndex, 0, levelQueue.Length - 1);
+            if (levelQueue[currentLevelQueueIndex] != null)
+                levelData = levelQueue[currentLevelQueueIndex];
+        }
+    }
 
     private void Start()
     {
@@ -162,6 +177,9 @@ public class V2MatchBoardManager : MonoBehaviour
         {
             for (int c = 0; c < cols; c++)
             {
+                if (!IsCellPlayable(r, c))
+                    continue;
+
                 V2Tile tile = SpawnTile(r, c, RandomTileId(), anchor, spawnAboveTop: false, isRefill: false);
                 grid[r, c] = tile;
             }
@@ -178,6 +196,9 @@ public class V2MatchBoardManager : MonoBehaviour
         {
             for (int c = 0; c < cols; c++)
             {
+                if (!IsCellPlayable(r, c))
+                    continue;
+
                 GameObject slot = Instantiate(slotPrefab, boardRoot);
                 slot.name = $"slot_{r}_{c}";
 
@@ -624,19 +645,28 @@ public class V2MatchBoardManager : MonoBehaviour
 
         for (int c = 0; c < cols; c++)
         {
-            int writeRow = rows - 1;
-
+            List<int> playableRowsDesc = new List<int>();
             for (int r = rows - 1; r >= 0; r--)
             {
-                V2Tile tile = grid[r, c];
-                if (tile == null) continue;
+                if (IsCellPlayable(r, c))
+                    playableRowsDesc.Add(r);
+            }
 
-                if (writeRow != r)
+            int writePtr = 0;
+            for (int i = 0; i < playableRowsDesc.Count; i++)
+            {
+                int r = playableRowsDesc[i];
+                V2Tile tile = grid[r, c];
+                if (tile == null)
+                    continue;
+
+                int targetRow = playableRowsDesc[writePtr];
+                if (targetRow != r)
                 {
-                    grid[writeRow, c] = tile;
+                    grid[targetRow, c] = tile;
                     grid[r, c] = null;
 
-                    tile.row = writeRow;
+                    tile.row = targetRow;
                     tile.col = c;
 
                     RectTransform rt = tile.GetComponent<RectTransform>();
@@ -646,12 +676,12 @@ public class V2MatchBoardManager : MonoBehaviour
                         {
                             rt = rt,
                             from = rt.anchoredPosition,
-                            to = GetCellAnchoredPosition(writeRow, c)
+                            to = GetCellAnchoredPosition(targetRow, c)
                         });
                     }
                 }
 
-                writeRow--;
+                writePtr++;
             }
         }
     }
@@ -667,6 +697,9 @@ public class V2MatchBoardManager : MonoBehaviour
         {
             for (int r = 0; r < rows; r++)
             {
+                if (!IsCellPlayable(r, c))
+                    continue;
+
                 if (grid[r, c] != null) continue;
 
                 V2Tile tile = SpawnTile(r, c, RandomTileId(), anchor, spawnAboveTop: true, isRefill: true);
@@ -1147,23 +1180,8 @@ public class V2MatchBoardManager : MonoBehaviour
     {
         if (tile == null) return;
 
+        // Özel taş ayrımı artık renk tint ile değil, direkt özel sprite'larla yapılıyor.
         Color tint = GetColorForId(tile.colorId);
-        switch (tile.specialType)
-        {
-            case V2SpecialType.RocketHorizontal:
-                tint = Color.Lerp(tint, Color.cyan, 0.35f);
-                break;
-            case V2SpecialType.RocketVertical:
-                tint = Color.Lerp(tint, new Color(1f, 0.4f, 1f), 0.35f);
-                break;
-            case V2SpecialType.Bomb:
-                tint = Color.Lerp(tint, Color.yellow, 0.45f);
-                break;
-            case V2SpecialType.Disco:
-                tint = Color.Lerp(tint, Color.green, 0.45f);
-                break;
-        }
-
         tile.SetVisual(GetSpriteForTile(tile), tint);
     }
 
@@ -1206,7 +1224,13 @@ public class V2MatchBoardManager : MonoBehaviour
 
     private bool IsInside(Vector2Int p)
     {
-        return p.x >= 0 && p.y >= 0 && p.x < grid.GetLength(0) && p.y < grid.GetLength(1);
+        if (grid == null)
+            return false;
+
+        if (p.x < 0 || p.y < 0 || p.x >= grid.GetLength(0) || p.y >= grid.GetLength(1))
+            return false;
+
+        return IsCellPlayable(p.x, p.y);
     }
 
     private bool AreNeighbors(Vector2Int a, Vector2Int b)
@@ -1294,6 +1318,37 @@ public class V2MatchBoardManager : MonoBehaviour
 
         if (hud != null)
             hud.ShowLose();
+    }
+
+    private bool IsCellPlayable(int row, int col)
+    {
+        if (levelData == null)
+            return true;
+
+        return levelData.IsCellPlayable(row, col);
+    }
+
+    public void LoadLevelFromQueue(int queueIndex)
+    {
+        if (levelQueue == null || levelQueue.Length == 0)
+            return;
+
+        int idx = Mathf.Clamp(queueIndex, 0, levelQueue.Length - 1);
+        if (levelQueue[idx] == null)
+            return;
+
+        currentLevelQueueIndex = idx;
+        levelData = levelQueue[idx];
+        StartLevel();
+    }
+
+    public void LoadNextLevelFromQueue()
+    {
+        if (levelQueue == null || levelQueue.Length == 0)
+            return;
+
+        int next = (currentLevelQueueIndex + 1) % levelQueue.Length;
+        LoadLevelFromQueue(next);
     }
 
     private void RefreshHUD()

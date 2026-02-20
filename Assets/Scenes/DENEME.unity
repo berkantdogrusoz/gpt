@@ -1566,8 +1566,14 @@ MonoBehaviour:
   playMusicOnStart: 1
   swapSfx: {fileID: 8300000, guid: ff12ceb3316a93f499fcc96a3854820b, type: 3}
   clearSfx: {fileID: 8300000, guid: 734de8c462fcc4c489bc84ba05c86eb0, type: 3}
+  bombSpecialSfx: {fileID: 0}
+  laneSpecialSfx: {fileID: 0}
+  discoSpecialSfx: {fileID: 0}
   swapVolume: 1
   clearVolume: 1
+  bombSpecialVolume: 1
+  laneSpecialVolume: 1
+  discoSpecialVolume: 1
 --- !u!82 &1302066098
 AudioSource:
   m_ObjectHideFlags: 0
@@ -1832,6 +1838,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   levelData: {fileID: 11400000, guid: 8fde691e8f13faf4fb94d8735827aa4d, type: 2}
+  levelQueue:
+  - {fileID: 11400000, guid: eea3f19168222d548b23a80ad6c9be2b, type: 2}
+  initialLevelQueueIndex: 0
   boardRoot: {fileID: 409322789}
   tilePrefab: {fileID: 7073990885428757325, guid: e840966f2e82a1f4c95266922283e40e, type: 3}
   slotPrefab: {fileID: 7073990885428757325, guid: c174dc96d0ac4af438d4302feadedb16, type: 3}
@@ -1858,15 +1867,16 @@ MonoBehaviour:
   - {r: 0.32184532, g: 0.7264151, b: 0.20901564, a: 0}
   tintSpritesWithTileColors: 0
   defaultTileTint: {r: 1, g: 1, b: 1, a: 1}
-  bombSpecialSprite: {fileID: 7919589794714950524, guid: 3cfba68329ed117498c72652c8c1fa72, type: 3}
-  discoSpecialSprite: {fileID: 0}
-  rocketHorizontalSpecialSprite: {fileID: 0}
-  rocketVerticalSpecialSprite: {fileID: 0}
+  bombSpecialSprite: {fileID: 804750764252999814, guid: 0c5786d829b85804d8926936fa528168, type: 3}
+  discoSpecialSprite: {fileID: 5197773840803472828, guid: 28ea193a395399040b30f416c9a9f20e, type: 3}
+  rocketHorizontalSpecialSprite: {fileID: -1818850764671545776, guid: 3cfba68329ed117498c72652c8c1fa72, type: 3}
+  rocketVerticalSpecialSprite: {fileID: 5361803370242908683, guid: e7c02f4eb19f4c54d80e23914d7137af, type: 3}
   randomBombSpawnChance: 0.015
   randomDiscoSpawnChance: 0.01
   allowRandomSpecialOnInitialFill: 1
   allowRandomSpecialOnRefill: 1
   fallStepDelay: 0.03
+  fallAnimationDuration: 0.5
   swapDuration: 0.12
   invalidShakeDuration: 0.12
   invalidShakeOffset: 10
