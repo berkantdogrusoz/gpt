@@ -88,6 +88,10 @@ public class V2MatchBoardManager : MonoBehaviour
     public float bombShakeAmount = 10f;
     public GameObject normalTileClearFxPrefab;
 
+    [Header("Post-Clear Delay")]
+    [Tooltip("Temizleme efektleri bittikten sonra slotların boş görünme süresi (sn). Oyuncuya 'efekt temizledi' hissi verir.")]
+    public float postClearEmptyDelay = 0.35f;
+
 
     private V2Tile[,] grid;
     private int score;
@@ -384,7 +388,11 @@ public class V2MatchBoardManager : MonoBehaviour
             TriggerBossAttack(clearedCount);
         }
 
-        yield return null;
+        if (postClearEmptyDelay > 0f)
+            yield return new WaitForSeconds(postClearEmptyDelay);
+        else
+            yield return null;
+
         List<FallAnimationItem> fallItems = new List<FallAnimationItem>();
         CollapseColumns(fallItems);
         RefillFromTop(fallItems);
@@ -633,7 +641,7 @@ public class V2MatchBoardManager : MonoBehaviour
             rocketTr.position = from;
         }
 
-        Destroy(rocket, specialFxLifetime);
+        Destroy(rocket);
     }
 
     private Vector3 GetCellWorldPosition(Vector2Int cell)
@@ -688,7 +696,10 @@ public class V2MatchBoardManager : MonoBehaviour
             TriggerBossAttack(clearedCount);
         }
 
-        yield return null;
+        if (postClearEmptyDelay > 0f)
+            yield return new WaitForSeconds(postClearEmptyDelay);
+        else
+            yield return null;
 
         List<FallAnimationItem> fallItems = new List<FallAnimationItem>();
         CollapseColumns(fallItems);
