@@ -39,6 +39,7 @@ public class V2MatchBoardManager : MonoBehaviour
 
     [Header("Special Tile Random Spawn")]
     [Range(0f, 1f)] public float randomBombSpawnChance = 0.015f;
+    [Range(0f, 1f)] public float randomRocketSpawnChance = 0.02f;
     [Range(0f, 1f)] public float randomDiscoSpawnChance = 0.01f;
     public bool allowRandomSpecialOnInitialFill = true;
     public bool allowRandomSpecialOnRefill = true;
@@ -74,6 +75,12 @@ public class V2MatchBoardManager : MonoBehaviour
     [Header("Special Tile FX")]
     public GameObject bombExplosionPrefab;
     public GameObject lineClearFxPrefab;
+    [Tooltip("Rocket line clear için hareket eden roket prefabı. Boşsa lineClearFxPrefab fallback olur.")]
+    public GameObject rocketTravelFxPrefab;
+    [Tooltip("Roketin hücre boyunca akış hızı (hücre/sn). Yüksek tut: 35+.")]
+    public float rocketTravelCellsPerSecond = 40f;
+    [Tooltip("Prefab 0° yönünde yukarı bakmıyorsa buradan düzeltme ver. (örn: sağa bakan prefab için +90)")]
+    public float rocketRotationOffset = 0f;
     public float specialFxLifetime = 1.2f;
     public float bombChargeDuration = 0.85f;
     public float bombHoldDuration = 0.45f;
@@ -410,17 +417,10 @@ public class V2MatchBoardManager : MonoBehaviour
             return;
         }
 
-        if (tile.specialType == V2SpecialType.RocketHorizontal)
+        if (tile.specialType == V2SpecialType.RocketHorizontal || tile.specialType == V2SpecialType.RocketVertical)
         {
-            AddHorizontalArea(origin, cellsToClear);
-            SpawnLineClearFx(origin, V2SpecialType.RocketHorizontal);
-            return;
-        }
-
-        if (tile.specialType == V2SpecialType.RocketVertical)
-        {
-            AddVerticalArea(origin, cellsToClear);
-            SpawnLineClearFx(origin, V2SpecialType.RocketVertical);
+            AddCrossArea(origin, cellsToClear);
+            PlayRocketCrossSweep(origin);
             return;
         }
     }
@@ -556,6 +556,97 @@ public class V2MatchBoardManager : MonoBehaviour
 
         for (int r = 0; r < grid.GetLength(0); r++)
             SpawnFxAtCell(new Vector2Int(r, center.y), lineClearFxPrefab, specialFxLifetime * 0.8f);
+    }
+
+    private void PlayRocketCrossSweep(Vector2Int center)
+    {
+        PlaySpecialTypeSfx(V2SpecialType.RocketHorizontal);
+        PlayRocketLineSweep(center, true);
+        PlayRocketLineSweep(center, false);
+    }
+
+    private void PlayRocketLineSweep(Vector2Int center, bool horizontal)
+    {
+        if (horizontal)
+        {
+            StartCoroutine(AnimateRocketSweep(center, new Vector2Int(0, -1)));
+            StartCoroutine(AnimateRocketSweep(center, new Vector2Int(0, 1)));
+        }
+        else
+        {
+            StartCoroutine(AnimateRocketSweep(center, new Vector2Int(-1, 0)));
+            StartCoroutine(AnimateRocketSweep(center, new Vector2Int(1, 0)));
+        }
+    }
+
+    private float GetRocketRotationZ(Vector2Int step)
+    {
+        // 0° = yukarı varsayımı
+        if (step.x < 0) return 0f + rocketRotationOffset;      // up
+        if (step.x > 0) return 180f + rocketRotationOffset;    // down
+        if (step.y < 0) return 90f + rocketRotationOffset;     // left
+        return 270f + rocketRotationOffset;                    // right
+    }
+
+    private IEnumerator AnimateRocketSweep(Vector2Int startCell, Vector2Int step)
+    {
+        GameObject rocketPrefab = rocketTravelFxPrefab != null ? rocketTravelFxPrefab : lineClearFxPrefab;
+        if (rocketPrefab == null)
+            yield break;
+
+        List<Vector2Int> path = new List<Vector2Int>();
+        Vector2Int cell = startCell;
+        while (IsInside(cell) && IsCellPlayable(cell.x, cell.y))
+        {
+            path.Add(cell);
+            cell += step;
+        }
+
+        if (path.Count == 0)
+            yield break;
+
+        Transform parent = boardRoot != null ? (boardRoot.parent != null ? boardRoot.parent : boardRoot) : null;
+        GameObject rocket = parent != null ? Instantiate(rocketPrefab, parent) : Instantiate(rocketPrefab);
+
+        Transform rocketTr = rocket.transform;
+        rocketTr.rotation = Quaternion.Euler(0f, 0f, GetRocketRotationZ(step));
+
+        float speed = Mathf.Max(1f, rocketTravelCellsPerSecond);
+        float cellDuration = 1f / speed;
+
+        Vector3 from = GetCellWorldPosition(path[0]);
+        rocketTr.position = from;
+
+        for (int i = 1; i < path.Count; i++)
+        {
+            Vector3 to = GetCellWorldPosition(path[i]);
+            float t = 0f;
+            while (t < cellDuration)
+            {
+                t += Time.deltaTime;
+                float k = Mathf.Clamp01(t / cellDuration);
+                rocketTr.position = Vector3.Lerp(from, to, k);
+                yield return null;
+            }
+
+            from = to;
+            rocketTr.position = from;
+        }
+
+        Destroy(rocket, specialFxLifetime);
+    }
+
+    private Vector3 GetCellWorldPosition(Vector2Int cell)
+    {
+        if (IsInside(cell))
+        {
+            V2Tile tile = grid[cell.x, cell.y];
+            if (tile != null)
+                return tile.transform.position;
+        }
+
+        Vector2 anchored = GetCellAnchoredPosition(cell.x, cell.y);
+        return boardRoot.TransformPoint(anchored);
     }
 
     private void SpawnFxAtCell(Vector2Int cell, GameObject prefab, float lifetime)
@@ -881,13 +972,17 @@ public class V2MatchBoardManager : MonoBehaviour
             return V2SpecialType.None;
 
         float bombChance = Mathf.Clamp01(randomBombSpawnChance);
+        float rocketChance = Mathf.Clamp01(randomRocketSpawnChance);
         float discoChance = Mathf.Clamp01(randomDiscoSpawnChance);
         float roll = Random.value;
 
         if (roll < bombChance)
             return V2SpecialType.Bomb;
 
-        if (roll < bombChance + discoChance)
+        if (roll < bombChance + rocketChance)
+            return V2SpecialType.RocketHorizontal;
+
+        if (roll < bombChance + rocketChance + discoChance)
             return V2SpecialType.Disco;
 
         return V2SpecialType.None;
@@ -1070,7 +1165,7 @@ public class V2MatchBoardManager : MonoBehaviour
         else if (streak >= 4)
         {
             int spawnRow = (startRow + endRow) / 2;
-            RegisterSpecialSpawn(new Vector2Int(spawnRow, col), V2SpecialType.RocketVertical, specialSpawns);
+            RegisterSpecialSpawn(new Vector2Int(spawnRow, col), V2SpecialType.RocketHorizontal, specialSpawns);
         }
     }
 
@@ -1093,7 +1188,7 @@ public class V2MatchBoardManager : MonoBehaviour
 
         if ((a == V2SpecialType.RocketHorizontal && b == V2SpecialType.RocketVertical) ||
             (a == V2SpecialType.RocketVertical && b == V2SpecialType.RocketHorizontal))
-            return V2SpecialType.Bomb;
+            return V2SpecialType.RocketHorizontal;
 
         if (a == V2SpecialType.Bomb || b == V2SpecialType.Bomb)
             return V2SpecialType.Bomb;
@@ -1114,13 +1209,11 @@ public class V2MatchBoardManager : MonoBehaviour
             V2Tile tile = grid[p.x, p.y];
             if (tile == null) continue;
 
-            if (tile.specialType == V2SpecialType.RocketHorizontal)
+            if (tile.specialType == V2SpecialType.RocketHorizontal || tile.specialType == V2SpecialType.RocketVertical)
             {
                 for (int c = 0; c < grid.GetLength(1); c++)
                     AddExpanded(new Vector2Int(p.x, c), expanded, queue);
-            }
-            else if (tile.specialType == V2SpecialType.RocketVertical)
-            {
+
                 for (int r = 0; r < grid.GetLength(0); r++)
                     AddExpanded(new Vector2Int(r, p.y), expanded, queue);
             }
@@ -1167,9 +1260,11 @@ public class V2MatchBoardManager : MonoBehaviour
                 break;
             case V2SpecialType.RocketHorizontal:
                 if (rocketHorizontalSpecialSprite != null) return rocketHorizontalSpecialSprite;
+                if (rocketVerticalSpecialSprite != null) return rocketVerticalSpecialSprite;
                 break;
             case V2SpecialType.RocketVertical:
                 if (rocketVerticalSpecialSprite != null) return rocketVerticalSpecialSprite;
+                if (rocketHorizontalSpecialSprite != null) return rocketHorizontalSpecialSprite;
                 break;
         }
 
